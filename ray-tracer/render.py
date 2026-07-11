@@ -475,11 +475,12 @@ def ray_color(ro, rd, world, max_depth, rng):
 _G = {}  # per-worker globals, filled by _init_worker
 
 
-def _init_worker(width, height, samples, depth, aperture, seed):
+def _init_worker(width, height, samples, depth, aperture, clamp, seed):
     _G["width"] = width
     _G["height"] = height
     _G["samples"] = samples
     _G["depth"] = depth
+    _G["clamp"] = clamp if clamp > 0 else float("inf")
     _G["seed"] = seed
     _G["world"] = build_scene()
     _G["camera"] = build_camera(width / height, aperture)
@@ -489,6 +490,7 @@ def _render_row(j):
     width, height = _G["width"], _G["height"]
     samples, depth = _G["samples"], _G["depth"]
     world, camera = _G["world"], _G["camera"]
+    clamp = _G["clamp"]
     rng = random.Random((_G["seed"] << 24) ^ (j * 0x9E3779B1))
 
     inv_s = 1.0 / samples
@@ -501,9 +503,11 @@ def _render_row(j):
             v = (height - 1 - j + rng.random()) / (height - 1)
             ro, rd = camera.get_ray(u, v, rng)
             c = ray_color(ro, rd, world, depth, rng)
-            r += c.x
-            g += c.y
-            b += c.z
+            # Firefly suppression: clamp rare ultra-bright samples. Slightly
+            # biased (darkens caustics a touch) but massively reduces noise.
+            r += min(c.x, clamp)
+            g += min(c.y, clamp)
+            b += min(c.z, clamp)
         # Average, clamp, gamma-encode, quantize to 8 bits.
         for channel in (r, g, b):
             value = min(max(channel * inv_s, 0.0), 1.0) ** gamma

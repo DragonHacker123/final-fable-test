@@ -67,6 +67,10 @@ def fixed_tests():
           [0.6, -0.4, 1.1])
     # a value used twice: gradient must ACCUMULATE, not overwrite
     check("reused node", lambda v: v[0] * v[0] + v[0].tanh() * v[0], [0.8])
+    # the fused dot kernel must match the unfused chain of + and *
+    check("fused dot",
+          lambda v: Value.dot(v[0:2], v[2:4], v[4]).tanh() * v[0],
+          [0.7, -0.3, 1.1, 0.4, -0.6])
 
 
 # ----------------------------------------------------------- random tests
@@ -122,5 +126,5 @@ def random_tests(n=30, seed=1337):
 if __name__ == "__main__":
     fixed_tests()
     n = random_tests()
-    print(f"\nGRADCHECK PASSED: 9 fixed + {n} random expressions, "
+    print(f"\nGRADCHECK PASSED: 10 fixed + {n} random expressions, "
           f"analytic gradients match central finite differences.")

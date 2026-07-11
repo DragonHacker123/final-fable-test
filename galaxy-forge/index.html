@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:;">
+<title>Galaxy Forge — Barnes-Hut N-Body Simulator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #04060d; }
+  body {
+    font-family: "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    color: #c8d4e8;
+    -webkit-user-select: none; user-select: none;
+  }
+  #view { position: absolute; inset: 0; display: block; cursor: crosshair; }
+
+  /* ---------- control panel ---------- */
+  #panel {
+    position: absolute; top: 14px; left: 14px; width: 262px;
+    background: rgba(8, 13, 26, 0.82);
+    border: 1px solid rgba(90, 140, 220, 0.22);
+    border-radius: 10px;
+    padding: 14px 14px 12px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    z-index: 10;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+  }
+  #panel.hidden { transform: translateX(-290px); opacity: 0; pointer-events: none; }
+  #panel h1 {
+    font-size: 15px; letter-spacing: 2.5px; font-weight: 600;
+    color: #e8f0ff; text-transform: uppercase;
+  }
+  #panel h1 span { color: #6ea8ff; }
+  #panel .sub { font-size: 9.5px; color: #5f7396; letter-spacing: 1px; margin: 3px 0 12px; }
+
+  .sect { font-size: 9px; letter-spacing: 1.8px; color: #5f7396; text-transform: uppercase; margin: 12px 0 6px; }
+
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .presets button {
+    font: inherit; font-size: 10.5px; padding: 7px 4px;
+    background: rgba(30, 45, 80, 0.55); color: #aebfdd;
+    border: 1px solid rgba(90, 140, 220, 0.25); border-radius: 6px;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .presets button:hover { background: rgba(50, 75, 130, 0.7); color: #e8f0ff; }
+  .presets button.active {
+    background: rgba(58, 110, 210, 0.45); color: #fff;
+    border-color: rgba(120, 175, 255, 0.7);
+    box-shadow: 0 0 12px rgba(80, 140, 255, 0.25);
+  }
+
+  .ctl { display: flex; align-items: center; gap: 8px; margin: 7px 0; font-size: 10.5px; }
+  .ctl label { flex: 0 0 78px; color: #8fa3c4; }
+  .ctl output { flex: 0 0 44px; text-align: right; color: #cfe0ff; font-size: 10px; }
+  input[type=range] {
+    flex: 1; appearance: none; -webkit-appearance: none; height: 3px;
+    background: rgba(110, 150, 220, 0.3); border-radius: 2px; outline: none; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    appearance: none; -webkit-appearance: none; width: 11px; height: 11px; border-radius: 50%;
+    background: #7fb0ff; box-shadow: 0 0 6px rgba(100, 160, 255, 0.8); cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 11px; height: 11px; border-radius: 50%; border: none;
+    background: #7fb0ff; box-shadow: 0 0 6px rgba(100, 160, 255, 0.8); cursor: pointer;
+  }
+
+  .toggles { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+  .toggles button, #btns button {
+    font: inherit; font-size: 10px; padding: 5px 9px;
+    background: rgba(25, 38, 68, 0.6); color: #93a8cc;
+    border: 1px solid rgba(90, 140, 220, 0.2); border-radius: 5px; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .toggles button:hover, #btns button:hover { color: #e8f0ff; border-color: rgba(120, 175, 255, 0.5); }
+  .toggles button.on {
+    background: rgba(58, 110, 210, 0.4); color: #dceaff;
+    border-color: rgba(120, 175, 255, 0.6);
+  }
+  #btns { display: flex; gap: 6px; margin-top: 10px; }
+  #btns button { flex: 1; padding: 7px 4px; font-size: 11px; }
+  select {
+    font: inherit; font-size: 10px; flex: 1;
+    background: rgba(25, 38, 68, 0.8); color: #aebfdd;
+    border: 1px solid rgba(90, 140, 220, 0.25); border-radius: 5px; padding: 4px;
+    outline: none; cursor: pointer;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud {
+    position: absolute; top: 14px; right: 14px; z-index: 10;
+    background: rgba(8, 13, 26, 0.75);
+    border: 1px solid rgba(90, 140, 220, 0.18);
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 11px; line-height: 1.75; text-align: right;
+    backdrop-filter: blur(8px); pointer-events: none;
+  }
+  #hud b { color: #7fb0ff; font-weight: 600; }
+  #hud .fps-good { color: #7dffa8; }
+  #hud .fps-bad { color: #ff9a7d; }
+
+  /* ---------- help footer ---------- */
+  #help {
+    position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+    font-size: 10px; color: #4d6档essential086; color: #4d6086; letter-spacing: 0.5px; z-index: 10;
+    background: rgba(8, 13, 26, 0.6); padding: 6px 16px; border-radius: 6px;
+    white-space: nowrap; pointer-events: none;
+  }
+  #help b { color: #8fa8d0; font-weight: 600; }
+
+  #panelToggle {
+    position: absolute; top: 14px; left: 14px; z-index: 11;
+    width: 30px; height: 30px; border-radius: 7px;
+    background: rgba(8, 13, 26, 0.85); color: #7fb0ff;
+    border: 1px solid rgba(90, 140, 220, 0.3); cursor: pointer;
+    font-size: 15px; line-height: 1; display: none;
+  }
+  #panel.hidden ~ #panelToggle { display: block; }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<div id="panel">
+  <h1>Galaxy <span>Forge</span></h1>
+  <div class="sub">BARNES-HUT N-BODY &middot; O(n log n)</div>
+
+  <div class="sect">Initial Conditions</div>
+  <div class="presets">
+    <button data-preset="spiral">Spiral Galaxy</button>
+    <button data-preset="collision" class="active">Collision</button>
+    <button data-preset="cluster">Star Cluster</button>
+    <button data-preset="bigbang">Big Bang</button>
+  </div>
+
+  <div class="sect">Simulation</div>
+  <div class="ctl"><label for="nSlider">Particles</label>
+    <input id="nSlider" type="range" min="500" max="6000" step="100" value="4200">
+    <output id="nOut">4200</output></div>
+  <div class="ctl"><label for="tsSlider">Time scale</label>
+    <input id="tsSlider" type="range" min="0" max="3" step="0.05" value="1.5">
+    <output id="tsOut">1.50&times;</output></div>
+  <div class="ctl"><label for="thetaSlider">Accuracy &theta;</label>
+    <input id="thetaSlider" type="range" min="0.3" max="1.4" step="0.05" value="0.7">
+    <output id="thetaOut">0.70</output></div>
+
+  <div class="sect">Rendering</div>
+  <div class="ctl"><label for="trailSlider">Trail length</label>
+    <input id="trailSlider" type="range" min="0" max="0.95" step="0.05" value="0.72">
+    <output id="trailOut">0.72</output></div>
+  <div class="ctl"><label for="colorMode">Color by</label>
+    <select id="colorMode">
+      <option value="speed" selected>Speed (blue = fast)</option>
+      <option value="density">Local density</option>
+    </select></div>
+  <div class="toggles">
+    <button id="trailBtn" class="on">Trails</button>
+    <button id="treeBtn">Quadtree</button>
+    <button id="glowBtn" class="on">Core glow</button>
+  </div>
+
+  <div id="btns">
+    <button id="pauseBtn">&#10074;&#10074; Pause</button>
+    <button id="stepBtn">&#9654;&#10074; Step</button>
+    <button id="resetBtn">&#8635; Restart</button>
+  </div>
+  <div class="sect" style="margin-bottom:0">
+    <span id="hidePanel" style="cursor:pointer; pointer-events:auto">&#171; hide panel</span>
+  </div>
+</div>
+<button id="panelToggle" title="show panel">&#9776;</button>
+
+<div id="hud">
+  <div><b id="fpsVal">--</b> fps</div>
+  <div><b id="nVal">0</b> bodies</div>
+  <div>t = <b id="tVal">0.0</b></div>
+  <div style="font-size:9.5px;color:#5f7396"><span id="msVal">--</span> ms/step</div>
+</div>
+
+<div id="help"><b>drag</b> fling mass &nbsp;&middot;&nbsp; <b>shift-drag / right-drag</b> pan &nbsp;&middot;&nbsp; <b>wheel</b> zoom &nbsp;&middot;&nbsp; <b>space</b> pause &nbsp;&middot;&nbsp; <b>.</b> step &nbsp;&middot;&nbsp; <b>q</b> quadtree &nbsp;&middot;&nbsp; <b>r</b> restart</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   GALAXY FORGE — Barnes-Hut N-body simulator
+   Physics core is DOM-free (headless-testable); UI attaches at bottom.
+   Units: G = 1, length in "parsec-ish" world units, mass arbitrary.
+   ===================================================================== */
+
+/* ---------------- simulation state ---------------- */
+const MAXN = 6600;                       // slider max + headroom for flung masses
+const px = new Float64Array(MAXN), py = new Float64Array(MAXN);
+const vx = new Float64Array(MAXN), vy = new Float64Array(MAXN);
+const ax = new Float64Array(MAXN), ay = new Float64Array(MAXN);
+const mass = new Float64Array(MAXN);
+const isCore = new Uint8Array(MAXN);     // rendered with a big halo
+const leafDepth = new Uint8Array(MAXN);  // quadtree leaf depth = local density proxy
+let N = 0;
+let simTime = 0;
+
+const P = {                // tunable physics parameters
+  G: 1.0,
+  eps: 3.0,                // Plummer softening length (avoids singularities)
+  theta: 0.7,              // Barnes-Hut opening angle
+  dtBase: 0.08,            // base leapfrog timestep
+  timeScale: 1.5,
+  colorV: 26               // speed that maps to the hottest (bluest) color
+};
+
+/* ---------------- Barnes-Hut quadtree (flat, pooled arrays) ----------------
+   Nodes are allocated in build order, so every child index is larger than
+   its parent — a single reverse sweep computes masses & centers of mass. */
+const MAXNODES = MAXN * 8;
+const MAXDEPTH = 40;
+const nCx   = new Float64Array(MAXNODES);   // node center
+const nCy   = new Float64Array(MAXNODES);
+const nHalf = new Float64Array(MAXNODES);   // half-width
+const nMass = new Float64Array(MAXNODES);
+const nComX = new Float64Array(MAXNODES);   // center of mass
+const nComY = new Float64Array(MAXNODES);
+const nChild = new Int32Array(MAXNODES);    // index of first of 4 children, -1 = leaf
+const nBody  = new Int32Array(MAXNODES);    // first body in leaf chain, -1 = empty
+const bNext  = new Int32Array(MAXN);        // body chain (for depth-capped leaves)
+let nodeCount = 0;
+
+function allocChildren(n) {
+  if (nodeCount + 4 > MAXNODES) return -1;   // budget exhausted -> chain instead
+  const c = nodeCount; nodeCount += 4;
+  const h = nHalf[n] * 0.5, cx = nCx[n], cy = nCy[n];
+  for (let k = 0; k < 4; k++) {
+    const i = c + k;
+    nCx[i] = cx + ((k & 1) ? h : -h);
+    nCy[i] = cy + ((k & 2) ? h : -h);
+    nHalf[i] = h;
+    nChild[i] = -1; nBody[i] = -1;
+  }
+  nChild[n] = c;
+  return c;
+}
+
+function insertBody(b) {
+  let node = 0, depth = 0;
+  for (;;) {
+    if (nChild[node] !== -1) {                        // internal: descend
+      const q = (px[b] > nCx[node] ? 1 : 0) + (py[b] > nCy[node] ? 2 : 0);
+      node = nChild[node] + q; depth++;
+    } else if (nBody[node] === -1) {                  // empty leaf: place
+      nBody[node] = b; leafDepth[b] = depth; return;
+    } else {                                          // occupied leaf
+      if (depth >= MAXDEPTH || allocChildren(node) === -1) {
+        bNext[b] = nBody[node]; nBody[node] = b;      // chain coincident bodies
+        leafDepth[b] = depth; return;
+      }
+      const ob = nBody[node]; nBody[node] = -1;       // push old body down
+      const q = (px[ob] > nCx[node] ? 1 : 0) + (py[ob] > nCy[node] ? 2 : 0);
+      nBody[nChild[node] + q] = ob; leafDepth[ob] = depth + 1;
+      // loop continues: b descends into the now-internal node
+    }
+  }
+}
+
+function buildTree() {
+  if (N === 0) { nodeCount = 0; return; }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (let i = 0; i < N; i++) {
+    const x = px[i], y = py[i];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
+  nodeCount = 1;
+  nCx[0] = (minX + maxX) * 0.5;
+  nCy[0] = (minY + maxY) * 0.5;
+  nHalf[0] = Math.max(maxX - minX, maxY - minY) * 0.5 * 1.0001 + 1e-3;
+  nChild[0] = -1; nBody[0] = -1;
+  for (let i = 0; i < N; i++) { bNext[i] = -1; insertBody(i); }
+  // reverse sweep: children precede nothing — every child index > parent index
+  for (let n = nodeCount - 1; n >= 0; n--) {
+    let msum = 0, mx = 0, my = 0;
+    const c = nChild[n];
+    if (c === -1) {
+      for (let b = nBody[n]; b !== -1; b = bNext[b]) {
+        const mb = mass[b]; msum += mb; mx += mb * px[b]; my += mb * py[b];
+      }
+    } else {
+      for (let k = 0; k < 4; k++) {
+        const ch = c + k, mc = nMass[ch];
+        msum += mc; mx += mc * nComX[ch]; my += mc * nComY[ch];
+      }
+    }
+    nMass[n] = msum;
+    if (msum > 0) { nComX[n] = mx / msum; nComY[n] = my / msum; }
+    else { nComX[n] = nCx[n]; nComY[n] = nCy[n]; }
+  }
+}
+
+/* ---------------- gravity via tree walk ----------------
+   Plummer-softened acceleration:  a = G m d / (|d|^2 + eps^2)^(3/2)
+   A body's own single-occupancy leaf contributes exactly zero (d = 0). */
+const walkStack = new Int32Array(4096);
+
+function computeForces() {
+  const th2 = P.theta * P.theta, e2 = P.eps * P.eps, G = P.G;
+  for (let i = 0; i < N; i++) {
+    const xi = px[i], yi = py[i];
+    let fx = 0, fy = 0, sp = 0;
+    walkStack[sp++] = 0;
+    while (sp > 0) {
+      const n = walkStack[--sp];
+      const nm = nMass[n];
+      if (nm === 0) continue;
+      const dx = nComX[n] - xi, dy = nComY[n] - yi;
+      const d2 = dx * dx + dy * dy;
+      const c = nChild[n];
+      if (c !== -1 && 4 * nHalf[n] * nHalf[n] > th2 * d2) {
+        walkStack[sp++] = c; walkStack[sp++] = c + 1;
+        walkStack[sp++] = c + 2; walkStack[sp++] = c + 3;
+      } else {
+        const s = d2 + e2;
+        const w = nm / (s * Math.sqrt(s));
+        fx += dx * w; fy += dy * w;
+      }
+    }
+    ax[i] = G * fx; ay[i] = G * fy;
+  }
+}
+
+/* ---------------- leapfrog (kick-drift-kick) integrator ----------------
+   Symplectic & time-reversible: bounded energy error over long runs,
+   which is what keeps disks cold enough to grow spiral arms. */
+function stepPhysics(dt) {
+  const h = dt * 0.5;
+  for (let i = 0; i < N; i++) {
+    vx[i] += ax[i] * h; vy[i] += ay[i] * h;      // half kick
+    px[i] += vx[i] * dt; py[i] += vy[i] * dt;    // drift
+  }
+  buildTree();
+  computeForces();
+  for (let i = 0; i < N; i++) {
+    vx[i] += ax[i] * h; vy[i] += ay[i] * h;      // half kick
+  }
+  simTime += dt;
+}
+
+/* ---------------- diagnostics (used by headless test) ---------------- */
+function totalEnergyApprox() {   // KE exact, PE via tree (theta-approximate)
+  let ke = 0;
+  for (let i = 0; i < N; i++) ke += 0.5 * mass[i] * (vx[i] * vx[i] + vy[i] * vy[i]);
+  const th2 = P.theta * P.theta, e2 = P.eps * P.eps;
+  let pe = 0;
+  for (let i = 0; i < N; i++) {
+    const xi = px[i], yi = py[i];
+    let sp = 0; walkStack[sp++] = 0;
+    while (sp > 0) {
+      const n = walkStack[--sp];
+      const nm = nMass[n]; if (nm === 0) continue;
+      const dx = nComX[n] - xi, dy = nComY[n] - yi;
+      const d2 = dx * dx + dy * dy;
+      const c = nChild[n];
+      if (c !== -1 && 4 * nHalf[n] * nHalf[n] > th2 * d2) {
+        walkStack[sp++] = c; walkStack[sp++] = c + 1;
+        walkStack[sp++] = c + 2; walkStack[sp++] = c + 3;
+      } else if (d2 > 1e-12) {
+        pe -= P.G * mass[i] * nm / Math.sqrt(d2 + e2);
+      }
+    }
+  }
+  return ke + 0.5 * pe;
+}
+
+/* ---------------- random helpers ---------------- */
+let gaussSpare = null;
+function gauss() {
+  if (gaussSpare !== null) { const g = gaussSpare; gaussSpare = null; return g; }
+  let u, v, s;
+  do { u = Math.random() * 2 - 1; v = Math.random() * 2 - 1; s = u * u + v * v; }
+  while (s >= 1 || s === 0);
+  const k = Math.sqrt(-2 * Math.log(s) / s);
+  gaussSpare = v * k;
+  return u * k;
+}
+
+/* ---------------- initial-condition builders ---------------- */
+function addBody(x, y, ux, uy, m, core) {
+  if (N >= MAXN) return -1;
+  const i = N++;
+  px[i] = x; py[i] = y; vx[i] = ux; vy[i] = uy;
+  ax[i] = 0; ay[i] = 0; mass[i] = m; isCore[i] = core ? 1 : 0;
+  return i;
+}
+
+// Softening-consistent circular speed for enclosed mass Me at radius r:
+// matches the softened field of the dominant central point mass.
+function circVel(Me, r) {
+  const r2 = r * r, s = r2 + P.eps * P.eps;
+  return Math.sqrt(P.G * Me * r2 / (s * Math.sqrt(s)) * (1 / Math.max(r, 1e-6)) * Math.max(r, 1e-6));
+}
+
+/* A disk galaxy: dominant central mass (rendered as glowing core), a small
+   Plummer bulge, and an exponential disk on a rotation curve derived from
+   the enclosed mass — so it orbits stably and shears into spiral arms. */
+function makeGalaxy(cx, cy, cvx, cvy, count, R, spin, Mc) {
+  addBody(cx, cy, cvx, cvy, Mc, true);
+  const nB = Math.max(1, Math.floor(count * 0.15));
+  const nD = Math.max(1, count - nB);
+  const Mb = Mc * 0.25, Md = Mc * 0.45;      // bulge & disk mass fractions
+  const mb = Mb / nB, md = Md / nD;
+  const a = Math.max(R * 0.06, 2 * P.eps);   // bulge Plummer scale
+  const Rd = R / 3.2;                        // disk exponential scale length
+  const rmin = Math.max(2.5 * P.eps, R * 0.045);
+  const cdf = 1 - Math.exp(-R / Rd);         // truncated exponential-disk CDF
+
+  // --- bulge: near-isotropic swarm on mostly-circular orbits
+  for (let i = 0; i < nB; i++) {
+    const u = 0.02 + Math.random() * 0.9;
+    let r = a / Math.sqrt(Math.pow(u, -2 / 3) - 1);
+    if (r > 3.5 * a) r = 3.5 * a;
+    const ph = Math.random() * Math.PI * 2;
+    const x = r * Math.cos(ph), y = r * Math.sin(ph);
+    const Me = Mc + Mb * Math.pow(r / Math.sqrt(r * r + a * a), 3);
+    const vc = circVel(Me, r);
+    const vt = vc * (0.75 + 0.4 * Math.random()) * spin;
+    const vr = vc * 0.30 * gauss();
+    addBody(cx + x, cy + y,
+      cvx - Math.sin(ph) * vt + Math.cos(ph) * vr,
+      cvy + Math.cos(ph) * vt + Math.sin(ph) * vr, mb, false);
+  }
+
+  // --- disk: exponential surface density, cold rotation + small dispersion
+  for (let i = 0; i < nD; i++) {
+    const u = Math.random();
+    let r = -Rd * Math.log(1 - u * cdf);
+    // inverse-CDF of M(<r) ∝ 1-e^(-r/Rd) is a fine visual stand-in for the
+    // true 1-(1+r/Rd)e^(-r/Rd); bias a touch outward for a fuller disk edge
+    r = rmin + r * (1 - rmin / R);
+    const ph = Math.random() * Math.PI * 2;
+    const x = r * Math.cos(ph), y = r * Math.sin(ph);
+    const fEnc = 1 - (1 + r / Rd) * Math.exp(-r / Rd);   // enclosed disk frac
+    const Me = Mc + Mb * Math.pow(r / Math.sqrt(r * r + a * a), 3) + Md * fEnc;
+    const vc = circVel(Me, r);
+    const vt = (vc + vc * 0.045 * gauss()) * spin;
+    const vr = vc * 0.035 * gauss();
+    addBody(cx + x, cy + y,
+      cvx - Math.sin(ph) * vt + Math.cos(ph) * vr,
+      cvy + Math.cos(ph) * vt + Math.sin(ph) * vr, md, false);
+  }
+}
+
+const PRESETS = {
+  /* One serene spiral: watch differential rotation shear the self-gravitating
+     disk into flocculent arms over the first few rotations. */
+  spiral(n) {
+    makeGalaxy(0, 0, 0, 0, n, 190, 1, 14000);
+    return { zoomR: 240, colorV: 22, ts: 1.5 };
+  },
+
+  /* THE MONEY SHOT — two prograde disks on a slightly-bound near-parabolic
+     orbit. First pericenter passage raises bridges + tidal tails; the pair
+     then falls back and merges. Prograde spin (disk L ∥ orbital L) is what
+     makes the tails long and dramatic (Toomre & Toomre 1972). */
+  collision(n) {
+    const Mc = 12000, R = 165;
+    const n1 = Math.floor(n * 0.5), n2 = n - n1;
+    const x0 = 430, y0 = 105;
+    const Mtot = 2 * Mc * 1.7;                       // core + bulge + disk each
+    const d0 = 2 * Math.hypot(x0, y0);
+    const vRel = 0.92 * Math.sqrt(2 * P.G * Mtot / d0);   // 92% of parabolic
+    makeGalaxy(-x0, -y0,  vRel / 2, 0, n1, R, 1, Mc);
+    makeGalaxy( x0,  y0, -vRel / 2, 0, n2, R, 1, Mc);
+    // orbital Lz = x*vy - y*vx of relative motion > 0 → CCW orbit, same
+    // sense as the CCW-spinning disks → prograde encounter → big tails.
+    return { zoomR: 560, colorV: 26, ts: 1.6 };
+  },
+
+  /* Dense Plummer-sphere cluster in rough virial equilibrium: core wobbles,
+     evaporates stars, and relaxes — nice for the quadtree overlay. */
+  cluster(n) {
+    const M = 26000, aP = 85, mEach = M / n;
+    for (let i = 0; i < n; i++) {
+      const u = 0.02 + Math.random() * 0.93;
+      let r = aP / Math.sqrt(Math.pow(u, -2 / 3) - 1);
+      if (r > 6 * aP) r = 6 * aP;
+      const ph = Math.random() * Math.PI * 2;
+      const sig = 0.42 * Math.sqrt(P.G * M / Math.sqrt(r * r + aP * aP));
+      addBody(r * Math.cos(ph), r * Math.sin(ph),
+              gauss() * sig, gauss() * sig, mEach, false);
+    }
+    return { zoomR: 260, colorV: 18, ts: 1.2 };
+  },
+
+  /* Cold uniform ball with a Hubble-flow velocity field, v ∝ r, just past
+     marginally bound: the edge escapes while the interior recollapses and
+     fragments into gravitationally bound clumps — structure formation. */
+  bigbang(n) {
+    const M = 30000, R0 = 70, mEach = M / n;
+    const H = 1.02 * Math.sqrt(2 * P.G * M / R0) / R0;
+    for (let i = 0; i < n; i++) {
+      const r = R0 * Math.sqrt(Math.random());
+      const ph = Math.random() * Math.PI * 2;
+      const x = r * Math.cos(ph), y = r * Math.sin(ph);
+      addBody(x, y, x * H + gauss() * 0.7, y * H + gauss() * 0.7, mEach, false);
+    }
+    return { zoomR: 420, colorV: 30, ts: 1.4 };
+  }
+};
+
+let currentPreset = 'collision';
+let presetMeta = { zoomR: 560, colorV: 26, ts: 1.6 };
+
+function applyPreset(name, n) {
+  N = 0; simTime = 0; currentPreset = name;
+  presetMeta = PRESETS[name](n);
+  P.colorV = presetMeta.colorV;
+  buildTree();
+  computeForces();          // prime accelerations for the first leapfrog kick
+}
+
+/* =====================================================================
+   Everything below touches the DOM — skipped when run headless in Node.
+   ===================================================================== */
+if (typeof document !== 'undefined') (function ui() {
+
+  const canvas = document.getElementById('view');
+  const ctx = canvas.getContext('2d');
+  let W = 0, H = 0, DPR = 1;
+
+  const cam = { x: 0, y: 0, zoom: 1 };
+  let paused = false, stepOnce = false;
+  let showTree = false, showTrails = true, showGlow = true;
+  let trailFade = 0.72;         // 0 = no trails … 0.95 = very long
+  let colorMode = 'speed';
+  let needClear = true;
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    canvas.width = Math.round(W * DPR);
+    canvas.height = Math.round(H * DPR);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    needClear = true;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  /* ---------- pre-rendered glow sprites (one per color bucket) ---------- */
+  const NBUCKETS = 32;
+  const RAMP = [                       // cool/slow → hot/fast
+    [255,  92,  40],
+    [255, 168,  76],
+    [255, 224, 166],
+    [196, 216, 255],
+    [124, 164, 255]
+  ];
+  function rampColor(t) {
+    const s = Math.min(Math.max(t, 0), 1) * (RAMP.length - 1);
+    const i = Math.min(Math.floor(s), RAMP.length - 2), f = s - i;
+    const A = RAMP[i], B = RAMP[i + 1];
+    return [
+      Math.round(A[0] + (B[0] - A[0]) * f),
+      Math.round(A[1] + (B[1] - A[1]) * f),
+      Math.round(A[2] + (B[2] - A[2]) * f)
+    ];
+  }
+  function makeSprite(r, g, b, size, coreWhite) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const g2 = c.getContext('2d');
+    const grad = g2.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    if (coreWhite) {
+      grad.addColorStop(0.00, 'rgba(255,255,255,0.95)');
+      grad.addColorStop(0.12, `rgba(${r},${g},${b},0.85)`);
+      grad.addColorStop(0.35, `rgba(${r},${g},${b},0.28)`);
+      grad.addColorStop(1.00, 'rgba(0,0,0,0)');
+    } else {
+      grad.addColorStop(0.00, 'rgba(255,255,255,0.85)');
+      grad.addColorStop(0.22, `rgba(${r},${g},${b},0.60)`);
+      grad.addColorStop(1.00, 'rgba(0,0,0,0)');
+    }
+    g2.fillStyle = grad;
+    g2.fillRect(0, 0, size, size);
+    return c;
+  }
+  const sprites = [];
+  for (let k = 0; k < NBUCKETS; k++) {
+    const [r, g, b] = rampColor(k / (NBUCKETS - 1));
+    sprites.push(makeSprite(r, g, b, 48, false));
+  }
+  const coreSprite = makeSprite(255, 214, 150, 160, true);
+  const flingSprite = makeSprite(180, 220, 255, 160, true);
+
+  /* ---------- camera helpers ---------- */
+  function screenToWorld(sx, sy) {
+    return [ (sx - W / 2) / cam.zoom + cam.x,
+             (sy - H / 2) / cam.zoom + cam.y ];
+  }
+  function fitCamera() {
+    cam.x = 0; cam.y = 0;
+    cam.zoom = Math.min(W, H) / (2.15 * presetMeta.zoomR);
+    needClear = true;
+  }
+
+  /* ---------- input: fling, pan, zoom ---------- */
+  let drag = null;   // {mode:'fling'|'pan', sx, sy, wx, wy, camX, camY}
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('mousedown', e => {
+    const pan = e.button === 1 || e.button === 2 || e.shiftKey;
+    const [wx, wy] = screenToWorld(e.clientX, e.clientY);
+    drag = { mode: pan ? 'pan' : 'fling',
+             sx: e.clientX, sy: e.clientY, cx: e.clientX, cy: e.clientY,
+             wx, wy, camX: cam.x, camY: cam.y };
+    canvas.style.cursor = pan ? 'grabbing' : 'crosshair';
+  });
+  window.addEventListener('mousemove', e => {
+    if (!drag) return;
+    drag.cx = e.clientX; drag.cy = e.clientY;
+    if (drag.mode === 'pan') {
+      cam.x = drag.camX - (e.clientX - drag.sx) / cam.zoom;
+      cam.y = drag.camY - (e.clientY - drag.sy) / cam.zoom;
+      needClear = true;
+    }
+  });
+  window.addEventListener('mouseup', e => {
+    if (!drag) return;
+    if (drag.mode === 'fling') {
+      const dxs = drag.cx - drag.sx, dys = drag.cy - drag.sy;
+      const speedK = 0.035 / cam.zoom;               // px of drag → world speed
+      addBody(drag.wx, drag.wy, dxs * speedK * cam.zoom, dys * speedK * cam.zoom,
+              2600, true);
+      // a flung intruder ~1/5 of a galaxy core: heavy enough to raise tides
+      buildTree(); computeForces();
+    }
+    drag = null;
+    canvas.style.cursor = 'crosshair';
+  });
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const [wx, wy] = screenToWorld(e.clientX, e.clientY);
+    const f = Math.exp(-e.deltaY * 0.0012);
+    cam.zoom = Math.min(Math.max(cam.zoom * f, 0.02), 40);
+    // keep the world point under the cursor fixed
+    cam.x = wx - (e.clientX - W / 2) / cam.zoom;
+    cam.y = wy - (e.clientY - H / 2) / cam.zoom;
+    needClear = true;
+  }, { passive: false });
+
+  /* ---------- UI wiring ---------- */
+  const $ = id => document.getElementById(id);
+  const nSlider = $('nSlider'), tsSlider = $('tsSlider'),
+        thetaSlider = $('thetaSlider'), trailSlider = $('trailSlider');
+
+  function restart() {
+    applyPreset(currentPreset, parseInt(nSlider.value, 10));
+    tsSlider.value = presetMeta.ts;
+    P.timeScale = presetMeta.ts;
+    $('tsOut').textContent = presetMeta.ts.toFixed(2) + '×';
+    fitCamera();
+  }
+
+  document.querySelectorAll('.presets button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.presets button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPreset = btn.dataset.preset;
+      restart();
+    });
+  });
+
+  nSlider.addEventListener('input', () => { $('nOut').textContent = nSlider.value; });
+  nSlider.addEventListener('change', restart);
+  tsSlider.addEventListener('input', () => {
+    P.timeScale = parseFloat(tsSlider.value);
+    $('tsOut').textContent = P.timeScale.toFixed(2) + '×';
+  });
+  thetaSlider.addEventListener('input', () => {
+    P.theta = parseFloat(thetaSlider.value);
+    $('thetaOut').textContent = P.theta.toFixed(2);
+  });
+  trailSlider.addEventListener('input', () => {
+    trailFade = parseFloat(trailSlider.value);
+    $('trailOut').textContent = trailFade.toFixed(2);
+  });
+  $('colorMode').addEventListener('change', e => { colorMode = e.target.value; });
+
+  function toggleBtn(id, get, set) {
+    $(id).addEventListener('click', () => {
+      set(!get());
+      $(id).classList.toggle('on', get());
+      needClear = true;
+    });
+  }
+  toggleBtn('trailBtn', () => showTrails, v => showTrails = v);
+  toggleBtn('treeBtn',  () => showTree,   v => showTree = v);
+  toggleBtn('glowBtn',  () => showGlow,   v => showGlow = v);
+
+  function setPaused(v) {
+    paused = v;
+    $('pauseBtn').innerHTML = paused ? '&#9654; Play' : '&#10074;&#10074; Pause';
+  }
+  $('pauseBtn').addEventListener('click', () => setPaused(!paused));
+  $('stepBtn').addEventListener('click', () => { setPaused(true); stepOnce = true; });
+  $('resetBtn').addEventListener('click', restart);
+  $('hidePanel').addEventListener('click', () => $('panel').classList.add('hidden'));
+  $('panelToggle').addEventListener('click', () => $('panel').classList.remove('hidden'));
+
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    if (e.code === 'Space') { e.preventDefault(); setPaused(!paused); }
+    else if (e.key === '.') { setPaused(true); stepOnce = true; }
+    else if (e.key === 'q') { $('treeBtn').click(); }
+    else if (e.key === 't') { $('trailBtn').click(); }
+    else if (e.key === 'r') { restart(); }
+  });
+
+  /* ---------- rendering ---------- */
+  function drawQuadtree() {
+    ctx.strokeStyle = 'rgba(90, 200, 160, 0.28)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let n = 0; n < nodeCount; n++) {
+      if (nMass[n] === 0) continue;
+      const h = nHalf[n];
+      if (h * cam.zoom * DPR < 3) continue;          // skip sub-pixel nodes
+      const sx = ((nCx[n] - h) - cam.x) * cam.zoom + W / 2;
+      const sy = ((nCy[n] - h) - cam.y) * cam.zoom + H / 2;
+      const s = h * 2 * cam.zoom;
+      if (sx > W || sy > H || sx + s < 0 || sy + s < 0) continue;
+      ctx.rect(sx * DPR, sy * DPR, s * DPR, s * DPR);
+    }
+    ctx.stroke();
+  }
+
+  function render() {
+    // trails: translucent wash instead of a hard clear
+    ctx.globalCompositeOperation = 'source-over';
+    if (needClear || !showTrails) {
+      ctx.fillStyle = '#04060d';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      needClear = false;
+    } else {
+      ctx.fillStyle = 'rgba(4, 6, 13, ' + (1 - trailFade).toFixed(3) + ')';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    if (showTree) drawQuadtree();
+
+    // stars, additively blended for glow
+    ctx.globalCompositeOperation = 'lighter';
+    const z = cam.zoom, cx = cam.x, cy = cam.y, hw = W / 2, hh = H / 2;
+    const size = Math.min(Math.max(6.5 * Math.sqrt(z), 2.6), 13) * DPR;
+    const half = size / 2;
+    const invV = (NBUCKETS - 1) / P.colorV;
+    const bySpeed = (colorMode === 'speed');
+    const pad = size;
+    for (let i = 0; i < N; i++) {
+      const sx = ((px[i] - cx) * z + hw) * DPR;
+      const sy = ((py[i] - cy) * z + hh) * DPR;
+      if (sx < -pad || sy < -pad || sx > canvas.width + pad || sy > canvas.height + pad) continue;
+      let b;
+      if (bySpeed) {
+        const dvx = vx[i], dvy = vy[i];
+        b = (Math.sqrt(dvx * dvx + dvy * dvy) * invV) | 0;
+      } else {
+        b = ((leafDepth[i] - 3) * (NBUCKETS - 1) / 9) | 0;
+      }
+      if (b < 0) b = 0; else if (b > NBUCKETS - 1) b = NBUCKETS - 1;
+      ctx.drawImage(sprites[b], sx - half, sy - half, size, size);
+      if (isCore[i]) {
+        const cs = Math.min(Math.max(120 * Math.sqrt(z), 30), 340) * DPR;
+        if (showGlow)
+          ctx.drawImage(mass[i] > 5000 ? coreSprite : flingSprite,
+                        sx - cs / 2, sy - cs / 2, cs, cs);
+      }
+    }
+
+    // fling preview
+    if (drag && drag.mode === 'fling') {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = 'rgba(160, 210, 255, 0.85)';
+      ctx.lineWidth = 1.5 * DPR;
+      ctx.setLineDash([6 * DPR, 5 * DPR]);
+      ctx.beginPath();
+      ctx.moveTo(drag.sx * DPR, drag.sy * DPR);
+      ctx.lineTo(drag.cx * DPR, drag.cy * DPR);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(drag.sx * DPR, drag.sy * DPR, 5 * DPR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  /* ---------- main loop ---------- */
+  const fpsEl = $('fpsVal'), nEl = $('nVal'), tEl = $('tVal'), msEl = $('msVal');
+  let lastT = 0, fpsEMA = 60, physMsEMA = 0, hudT = 0;
+
+  function frame(t) {
+    const dtms = Math.min(t - lastT, 100) || 16.7;
+    lastT = t;
+    fpsEMA += (1000 / dtms - fpsEMA) * 0.06;
+
+    if (!paused || stepOnce) {
+      const t0 = performance.now();
+      if (stepOnce) {
+        stepPhysics(P.dtBase);
+        stepOnce = false;
+      } else if (P.timeScale > 0) {
+        // sub-step so dt per leapfrog step never exceeds dtBase (stability)
+        const nSub = Math.max(1, Math.ceil(P.timeScale));
+        const dt = P.dtBase * P.timeScale / nSub;
+        for (let s = 0; s < nSub; s++) stepPhysics(dt);
+      }
+      physMsEMA += (performance.now() - t0 - physMsEMA) * 0.08;
+    } else if (showTree && nodeCount === 0) {
+      buildTree();
+    }
+
+    render();
+
+    hudT += dtms;
+    if (hudT > 250) {
+      hudT = 0;
+      fpsEl.textContent = Math.round(fpsEMA);
+      fpsEl.className = fpsEMA > 45 ? 'fps-good' : 'fps-bad';
+      nEl.textContent = N;
+      tEl.textContent = simTime.toFixed(1);
+      msEl.textContent = physMsEMA.toFixed(1);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  restart();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

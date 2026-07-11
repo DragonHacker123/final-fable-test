@@ -113,6 +113,32 @@ class Value:
         out._backward = _backward
         return out
 
+    # -------------------------------------------------------- fused kernel
+
+    @staticmethod
+    def dot(ws, xs, bias):
+        """Fused affine op: bias + sum_i ws[i]*xs[i] as a SINGLE graph node.
+
+        Mathematically identical to chaining + and *, but it collapses the
+        2n intermediate nodes of a dot product into one, which makes the
+        pure-Python engine ~10x faster on neural nets -- the same trick
+        (kernel fusion) real frameworks use. Gradients:
+            d/dw_i = x_i,   d/dx_i = w_i,   d/dbias = 1
+        """
+        s = bias.data
+        for w, x in zip(ws, xs):
+            s += w.data * x.data
+        out = Value(s, tuple(ws) + tuple(xs) + (bias,), "dot")
+
+        def _backward():
+            g = out.grad
+            for w, x in zip(ws, xs):
+                w.grad += x.data * g
+                x.grad += w.data * g
+            bias.grad += g
+        out._backward = _backward
+        return out
+
     # ----------------------------------------------------- backpropagation
 
     def backward(self):

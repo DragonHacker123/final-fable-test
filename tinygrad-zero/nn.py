@@ -32,9 +32,7 @@ class Neuron(Module):
         self.nonlin = nonlin
 
     def __call__(self, x):
-        act = self.b
-        for wi, xi in zip(self.w, x):
-            act = act + wi * xi
+        act = Value.dot(self.w, x, self.b)
         if self.nonlin == "tanh":
             return act.tanh()
         if self.nonlin == "relu":

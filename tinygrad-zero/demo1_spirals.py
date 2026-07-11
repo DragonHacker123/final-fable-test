@@ -47,7 +47,7 @@ def loss_and_acc(model, pts, ys, alpha=1e-4):
     return total, acc
 
 
-def train(model, pts, ys, epochs=260, lr_max=0.20, lr_min=0.005, log_every=10):
+def train(model, pts, ys, epochs=600, lr_max=0.30, lr_min=0.005, log_every=25):
     opt = SGD(model.parameters(), lr=lr_max, momentum=0.9)
     sched = CosineSchedule(lr_max, lr_min, epochs, warmup=5)
     t0 = time.time()
@@ -132,11 +132,11 @@ def decision_plot(model, pts, ys, cols=64, rows=30, lim=1.25, ansi=True):
 # ------------------------------------------------------------------ main
 
 def main():
-    epochs = int(sys.argv[1]) if len(sys.argv) > 1 else 260
+    epochs = int(sys.argv[1]) if len(sys.argv) > 1 else 600
     pts, ys = make_spirals()
     print(f"two-spirals dataset: {len(pts)} points, 2 classes\n")
 
-    model = MLP([2, 16, 16, 1], nonlin="tanh", seed=7)
+    model = MLP([2, 32, 32, 1], nonlin="tanh", seed=7)
     print(f"model: {model}")
     print(f"parameters: {len(model.parameters())}\n")
 

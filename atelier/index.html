@@ -1,0 +1,1214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier — A Gallery of Generative Art</title>
+<style>
+  :root{
+    --bg:#0a0a0e;
+    --panel:rgba(13,13,18,.86);
+    --hair:rgba(255,255,255,.09);
+    --ink:#e8e4da;
+    --ink-dim:#9a958a;
+    --ink-faint:#5f5b52;
+    --gold:#c9a45c;
+    --gold-dim:rgba(201,164,92,.35);
+    --serif:"Bodoni MT","Didot","Playfair Display","Baskerville","Georgia",serif;
+    --sans:"Avenir Next","Segoe UI","Helvetica Neue",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--sans)}
+  canvas#c{position:fixed;inset:0;display:block}
+
+  /* soft museum vignette over the work (view only; PNG export stays clean) */
+  #vignette{position:fixed;inset:0;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 42%,transparent 55%,rgba(0,0,0,.38) 100%);}
+
+  #veil{position:fixed;inset:0;background:#07070a;opacity:1;pointer-events:none;
+    transition:opacity .55s cubic-bezier(.4,0,.2,1);}
+  #veil.on{opacity:1}
+  #veil.off{opacity:0}
+
+  /* ---------- panel ---------- */
+  aside#panel{
+    position:fixed;top:0;left:0;bottom:0;width:292px;z-index:10;
+    background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border-right:1px solid var(--hair);
+    display:flex;flex-direction:column;
+    transition:transform .5s cubic-bezier(.4,0,.2,1);
+  }
+  body.zen aside#panel{transform:translateX(-100%)}
+  #panelToggle{
+    position:fixed;top:14px;left:306px;z-index:11;width:30px;height:30px;
+    background:var(--panel);border:1px solid var(--hair);border-radius:50%;
+    color:var(--ink-dim);font-size:12px;cursor:pointer;line-height:1;
+    transition:left .5s cubic-bezier(.4,0,.2,1),color .2s;
+  }
+  #panelToggle:hover{color:var(--gold)}
+  body.zen #panelToggle{left:14px}
+
+  header.masthead{padding:26px 24px 18px;border-bottom:1px solid var(--hair)}
+  header.masthead h1{
+    font-family:var(--serif);font-weight:400;font-size:30px;letter-spacing:.34em;
+    color:var(--ink);text-indent:.34em;text-align:center;
+  }
+  header.masthead .tag{
+    margin-top:6px;text-align:center;font-size:10px;letter-spacing:.24em;
+    text-transform:uppercase;color:var(--ink-faint);
+  }
+
+  nav#roomNav{padding:10px 0;border-bottom:1px solid var(--hair)}
+  .roomBtn{
+    display:flex;align-items:baseline;gap:10px;width:100%;padding:9px 24px;
+    background:none;border:none;cursor:pointer;text-align:left;
+    color:var(--ink-dim);position:relative;transition:color .25s,background .25s;
+  }
+  .roomBtn:hover{color:var(--ink)}
+  .roomBtn .num{font-family:var(--serif);font-size:12px;color:var(--ink-faint);width:22px;flex:none}
+  .roomBtn .nm{font-family:var(--serif);font-size:16.5px;letter-spacing:.02em}
+  .roomBtn .sub{margin-left:auto;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
+  .roomBtn.active{color:var(--ink);background:rgba(201,164,92,.06)}
+  .roomBtn.active::before{
+    content:"";position:absolute;left:0;top:6px;bottom:6px;width:2px;background:var(--gold);
+  }
+  .roomBtn.active .num{color:var(--gold)}
+
+  section#controls{flex:1;overflow-y:auto;padding:18px 24px;scrollbar-width:thin}
+  section#controls h2{
+    font-size:10px;letter-spacing:.26em;text-transform:uppercase;
+    color:var(--ink-faint);margin-bottom:14px;
+  }
+  .ctl{margin-bottom:14px}
+  .ctl label{display:flex;justify-content:space-between;font-size:11px;
+    letter-spacing:.06em;color:var(--ink-dim);margin-bottom:6px}
+  .ctl label output{color:var(--gold);font-variant-numeric:tabular-nums}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:2px;border-radius:1px;
+    background:rgba(255,255,255,.14);outline:none;cursor:pointer;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:11px;height:11px;border-radius:50%;
+    background:var(--ink);border:1px solid var(--gold-dim);transition:background .2s;
+  }
+  input[type=range]::-webkit-slider-thumb:hover{background:var(--gold)}
+  input[type=range]::-moz-range-thumb{
+    width:10px;height:10px;border-radius:50%;background:var(--ink);
+    border:1px solid var(--gold-dim);cursor:pointer;
+  }
+  select{
+    width:100%;padding:6px 8px;background:#111116;color:var(--ink);
+    border:1px solid var(--hair);border-radius:3px;font-size:12px;font-family:var(--sans);
+    outline:none;cursor:pointer;
+  }
+  select:focus{border-color:var(--gold-dim)}
+
+  .btnrow{display:flex;gap:10px;margin:20px 0 16px}
+  .btnrow button{
+    flex:1;padding:9px 0;background:none;border:1px solid var(--hair);border-radius:3px;
+    color:var(--ink-dim);font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;
+    cursor:pointer;transition:all .25s;font-family:var(--sans);
+  }
+  .btnrow button:hover{border-color:var(--gold-dim);color:var(--gold)}
+  .btnrow button:active{transform:translateY(1px)}
+
+  p#desc{font-size:11.5px;line-height:1.65;color:var(--ink-faint);
+    border-top:1px solid var(--hair);padding-top:14px;font-style:italic;
+    font-family:var(--serif);letter-spacing:.01em}
+
+  footer.colophon{
+    padding:14px 24px 16px;border-top:1px solid var(--hair);
+    display:flex;flex-direction:column;gap:4px;
+  }
+  footer.colophon .seed{font-size:10px;letter-spacing:.12em;color:var(--ink-faint);
+    font-variant-numeric:tabular-nums}
+  footer.colophon .hint{font-size:9px;letter-spacing:.1em;color:var(--ink-faint);opacity:.75}
+  footer.colophon .hint b{color:var(--ink-dim);font-weight:500}
+
+  /* room title card that fades in on entry */
+  #roomTitle{
+    position:fixed;left:50%;bottom:9%;transform:translateX(-50%);z-index:5;
+    pointer-events:none;text-align:center;opacity:0;
+    transition:opacity 1.1s ease;
+  }
+  #roomTitle.show{opacity:1}
+  #roomTitle .rt-roman{font-size:11px;letter-spacing:.5em;text-indent:.5em;
+    color:var(--gold);text-transform:uppercase;margin-bottom:8px}
+  #roomTitle .rt-name{font-family:var(--serif);font-size:44px;font-weight:400;
+    color:var(--ink);letter-spacing:.06em;text-shadow:0 2px 24px rgba(0,0,0,.8)}
+  #roomTitle .rt-sub{font-size:10.5px;letter-spacing:.3em;text-transform:uppercase;
+    color:var(--ink-dim);margin-top:8px}
+
+  @media (max-width:760px){
+    aside#panel{width:250px}
+    #panelToggle{left:264px}
+    #roomTitle .rt-name{font-size:30px}
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="vignette"></div>
+<div id="roomTitle"><div class="rt-roman"></div><div class="rt-name"></div><div class="rt-sub"></div></div>
+<div id="veil" class="on"></div>
+
+<aside id="panel">
+  <header class="masthead">
+    <h1>ATELIER</h1>
+    <div class="tag">six rooms of living mathematics</div>
+  </header>
+  <nav id="roomNav"></nav>
+  <section id="controls">
+    <h2>Parameters</h2>
+    <div id="params"></div>
+    <div class="btnrow">
+      <button id="btnReseed" title="R">Reseed</button>
+      <button id="btnSave" title="S">Save&nbsp;PNG</button>
+    </div>
+    <p id="desc"></p>
+  </section>
+  <footer class="colophon">
+    <span class="seed" id="seedLbl"></span>
+    <span class="hint"><b>1–6</b> rooms &nbsp;·&nbsp; <b>R</b> reseed &nbsp;·&nbsp; <b>S</b> save &nbsp;·&nbsp; <b>H</b> hide panel &nbsp;·&nbsp; click canvas to touch the work</span>
+  </footer>
+</aside>
+<button id="panelToggle" title="H">◂</button>
+
+<script>
+'use strict';
+/* =====================================================================
+   ATELIER — a gallery of six generative algorithms.
+   Everything below is self-contained: seeded RNG, hand-rolled value
+   noise, and six independent "rooms" sharing one canvas and one loop.
+   ===================================================================== */
+
+/* ---------------- utilities ---------------- */
+const $ = s => document.querySelector(s);
+const clamp = (v,a,b)=> v<a?a : v>b?b : v;
+const lerp  = (a,b,t)=> a+(b-a)*t;
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function hashStr(s){
+  let h = 2166136261;
+  for (let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+
+/* ---------- value noise (own implementation, no libraries) ----------
+   Hashed lattice values in [-1,1], quintic-smoothed trilinear blend,
+   summed over octaves (fBm). */
+function makeNoise(rand){
+  const P = new Uint8Array(512);
+  const perm = new Uint8Array(256);
+  for (let i=0;i<256;i++) perm[i]=i;
+  for (let i=255;i>0;i--){ const j=(rand()*(i+1))|0; const t=perm[i]; perm[i]=perm[j]; perm[j]=t; }
+  for (let i=0;i<512;i++) P[i]=perm[i&255];
+  const fade = t => t*t*t*(t*(t*6-15)+10);
+  const val = (x,y,z) => P[(P[(P[x&255]+y)&255]+z)&255]/127.5 - 1;
+  function noise3(x,y,z){
+    const X=Math.floor(x), Y=Math.floor(y), Z=Math.floor(z);
+    const fx=x-X, fy=y-Y, fz=z-Z;
+    const u=fade(fx), v=fade(fy), w=fade(fz);
+    const c000=val(X,Y,Z),     c100=val(X+1,Y,Z),
+          c010=val(X,Y+1,Z),   c110=val(X+1,Y+1,Z),
+          c001=val(X,Y,Z+1),   c101=val(X+1,Y,Z+1),
+          c011=val(X,Y+1,Z+1), c111=val(X+1,Y+1,Z+1);
+    return lerp(
+      lerp(lerp(c000,c100,u), lerp(c010,c110,u), v),
+      lerp(lerp(c001,c101,u), lerp(c011,c111,u), v), w);
+  }
+  function fbm(x,y,z,oct){
+    let a=0, amp=0.5, f=1;
+    for (let o=0;o<oct;o++){ a += amp*noise3(x*f,y*f,z*f); f*=2; amp*=0.5; }
+    return a;
+  }
+  return {noise3, fbm};
+}
+
+/* ---------------- palettes ---------------- */
+const PALETTES = {
+  Glacier : ['#04070f','#0d2b45','#1d5c8c','#3fa0c9','#9fd8e8','#eef9ff'],
+  Ember   : ['#0b0706','#3d1308','#9a2b0f','#e4572e','#f5b04a','#ffe8c2'],
+  Verdant : ['#04130b','#0c3b2e','#1f6f43','#4f9d3f','#a8d55a','#f0ffd0'],
+  Nocturne: ['#05060f','#141a3c','#31418f','#7261d6','#c9a0ff','#f4e9ff'],
+  Aurum   : ['#0c0a06','#3a2c12','#8a6b1f','#d4af37','#f2d675','#fdf6d8'],
+  Orchid  : ['#0a0612','#2b1055','#7a1f8a','#c2519e','#f48fb1','#ffe3f1'],
+  Vitrail : ['#120e16','#8f1d2c','#c96a1e','#e0b432','#1e7d5a','#1d5c8c','#5a2d82'],
+  Abyss   : ['#020409','#04263a','#0a5e63','#19a78a','#7fe0b0','#eafff2'],
+};
+function hex2rgb(h){
+  return [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)];
+}
+const PAL = {};
+for (const k in PALETTES) PAL[k] = PALETTES[k].map(hex2rgb);
+
+function sampPal(name, t){
+  const p = PAL[name]; t = clamp(t,0,1);
+  const f = t*(p.length-1), i = Math.min(p.length-2, f|0), u = f-i;
+  return [ lerp(p[i][0],p[i+1][0],u), lerp(p[i][1],p[i+1][1],u), lerp(p[i][2],p[i+1][2],u) ];
+}
+function css(name, t, a){
+  const c = sampPal(name, t);
+  return 'rgba(' + (c[0]|0) + ',' + (c[1]|0) + ',' + (c[2]|0) + ',' + (a==null?1:a) + ')';
+}
+/* 256-step RGB lookup table across a palette */
+function palLUT(name, n){
+  const lut = new Uint8Array(n*3);
+  for (let i=0;i<n;i++){
+    const c = sampPal(name, i/(n-1));
+    lut[i*3]=c[0]|0; lut[i*3+1]=c[1]|0; lut[i*3+2]=c[2]|0;
+  }
+  return lut;
+}
+
+/* ---------------- stage ---------------- */
+const canvas = $('#c');
+const ctx = canvas.getContext('2d');
+const DPR = Math.min(window.devicePixelRatio || 1, 1.75);
+let W = 0, H = 0;
+
+function sizeCanvas(){
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width  = Math.round(W*DPR);
+  canvas.height = Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+function makeBuffer(){
+  const b = document.createElement('canvas');
+  b.width = canvas.width; b.height = canvas.height;
+  const bc = b.getContext('2d');
+  bc.setTransform(DPR,0,0,DPR,0,0);
+  return [b,bc];
+}
+
+/* ---------------- param helpers ---------------- */
+function range(key,label,min,max,step,value,reinit){
+  return {key,label,type:'range',min,max,step,value,reinit:!!reinit};
+}
+function select(key,label,options,value,reinit){
+  return {key,label,type:'select',options,value,reinit:!!reinit};
+}
+function paletteParam(def){ return select('palette','Palette',Object.keys(PALETTES),def,true); }
+function indexParams(room){ room.P={}; for (const p of room.params) room.P[p.key]=p; return room; }
+function gv(room,key){ return room.P[key].value; }
+
+/* =====================================================================
+   ROOM I — ZEPHYR · flow fields
+   Particles advected through a layered value-noise vector field;
+   heading θ(x,y,t) = swirl·π·fbm(sx, sy, t). Strokes accumulate.
+   ===================================================================== */
+const flowRoom = indexParams({
+  key:'flow', roman:'I', name:'Zephyr', sub:'flow fields',
+  desc:'A vector field breathed out of layered value noise. Ten thousand quiet travellers read the wind at their feet — θ = swirl·π·fbm(x,y,t) — and leave their whole lives behind as a single stroke.',
+  params:[
+    range('count','Travellers',300,4000,50,1800,true),
+    range('scale','Field scale',0.4,4,0.05,1.4),
+    range('swirl','Swirl',0.5,4,0.05,2.3),
+    range('speed','Pace',0.3,3,0.05,1.1),
+    range('fade','Evanescence',0,0.05,0.001,0.005),
+    paletteParam('Glacier'),
+  ],
+  init(){
+    this.noise = makeNoise(this.rand);
+    const pal = gv(this,'palette');
+    const NB = 18;
+    this.buckets = [];
+    for (let b=0;b<NB;b++){
+      this.buckets.push({
+        col: css(pal, 0.22 + 0.74*(b/(NB-1)), 0.17),
+        w: 0.7 + 1.1*(b/(NB-1)),
+        pts: []
+      });
+    }
+    const n = gv(this,'count');
+    for (let i=0;i<n;i++) this.spawn(true);
+    ctx.fillStyle = css(pal, 0, 1);
+    ctx.fillRect(0,0,W,H);
+  },
+  spawn(){
+    const r = this.rand;
+    const x = r()*W, y = r()*H;
+    const t = 0.5 + 0.5*this.noise.fbm(x*0.0016, y*0.0016, 7.7, 2)*1.6;
+    const b = clamp((t*this.buckets.length)|0, 0, this.buckets.length-1);
+    this.buckets[b].pts.push({x, y, life: 120 + r()*420});
+  },
+  frame(t,dt){
+    const pal = gv(this,'palette');
+    const fade = gv(this,'fade');
+    if (fade>0){ ctx.fillStyle = css(pal,0,fade); ctx.fillRect(0,0,W,H); }
+    const sc = gv(this,'scale')*0.0028;
+    const sw = gv(this,'swirl')*Math.PI;
+    const sp = gv(this,'speed')*85*dt;
+    const noi = this.noise, tz = t*0.055;
+    ctx.lineCap='round';
+    let deficit = 0;
+    for (const B of this.buckets){
+      ctx.strokeStyle=B.col; ctx.lineWidth=B.w;
+      ctx.beginPath();
+      const pts = B.pts;
+      for (let i=pts.length-1;i>=0;i--){
+        const p = pts[i];
+        const a = noi.fbm(p.x*sc, p.y*sc, tz, 3)*sw*2;
+        const nx = p.x + Math.cos(a)*sp, ny = p.y + Math.sin(a)*sp;
+        ctx.moveTo(p.x,p.y); ctx.lineTo(nx,ny);
+        p.x=nx; p.y=ny; p.life -= 60*dt;
+        if (p.life<0 || nx<-20 || nx>W+20 || ny<-20 || ny>H+20){
+          pts.splice(i,1); deficit++;
+        }
+      }
+      ctx.stroke();
+    }
+    for (let i=0;i<deficit;i++) this.spawn();
+  },
+  pointer(x,y){
+    /* a gust: fling a handful of bright travellers from the touch */
+    for (let k=0;k<60;k++){
+      const a=this.rand()*Math.PI*2, r=this.rand()*26;
+      const b=(this.rand()*this.buckets.length)|0;
+      this.buckets[b].pts.push({x:x+Math.cos(a)*r, y:y+Math.sin(a)*r, life:150+this.rand()*300});
+    }
+  }
+});
+
+/* =====================================================================
+   ROOM II — CONSERVATORY · stochastic L-system garden
+   Axiom X; X rewrites to one of three bracketed productions chosen
+   at random, F → FF. Interpreted by a turtle each frame with a wind
+   term that deepens with bracket depth, so the canopy sways.
+   ===================================================================== */
+const gardenRoom = indexParams({
+  key:'garden', roman:'II', name:'Conservatory', sub:'l-system garden',
+  desc:'A stochastic grammar — X → F[+X][−X]FX and its siblings, F → FF — grown once, then re-read every frame by a turtle whose wrist trembles more the deeper the brackets nest. That trembling is the wind.',
+  params:[
+    range('plants','Specimens',1,6,1,4,true),
+    range('iters','Generations',4,7,1,6,true),
+    range('angle','Branch angle°',14,38,0.5,24,true),
+    range('wind','Wind',0,3,0.05,1.1),
+    paletteParam('Verdant'),
+  ],
+  expand(rand, iters){
+    const RULES = {
+      X: [['F[+X][-X]FX',0.34],['F[+X]F[-X]+X',0.33],['F[-X]F[+X]-X',0.33]],
+      F: [['FF',1]],
+    };
+    let s = 'X';
+    for (let it=0; it<iters; it++){
+      let out = '';
+      for (let i=0;i<s.length;i++){
+        const c = s[i], rs = RULES[c];
+        if (!rs){ out += c; continue; }
+        let r = rand(), pick = rs[rs.length-1][0];
+        for (const [prod,p] of rs){ if ((r-=p) <= 0){ pick=prod; break; } }
+        out += pick;
+      }
+      if (out.length > 90000) break;
+      s = out;
+    }
+    return s;
+  },
+  dryRun(str, turn){
+    /* measure extents & depth with unit steps, no wind */
+    let x=0,y=0,ang=-Math.PI/2,depth=0,maxDepth=1;
+    let minX=0,maxX=0,minY=0,maxY=0;
+    const st=[];
+    for (let i=0;i<str.length;i++){
+      const c=str[i];
+      if (c==='F'){ x+=Math.cos(ang); y+=Math.sin(ang);
+        if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; }
+      else if (c==='+') ang+=turn;
+      else if (c==='-') ang-=turn;
+      else if (c==='['){ st.push(x,y,ang,depth); depth++; if(depth>maxDepth)maxDepth=depth; }
+      else if (c===']'){ if(st.length){ depth=st.pop(); ang=st.pop(); y=st.pop(); x=st.pop(); } }
+    }
+    return {minX,maxX,minY,maxY,maxDepth};
+  },
+  init(){
+    const r = this.rand;
+    this.noise = makeNoise(r);
+    const n = gv(this,'plants');
+    const iters = gv(this,'iters');
+    const turn = gv(this,'angle')*Math.PI/180;
+    this.groundY = H*0.9;
+    this.plants = [];
+    for (let i=0;i<n;i++){
+      const str = this.expand(r, iters);
+      const m = this.dryRun(str, turn);
+      const targetH = H*(0.34 + r()*0.3);
+      const unitH = Math.max(4, -m.minY);
+      const step = targetH/unitH;
+      /* blossoms live where X symbols survived in the final string */
+      const bloom = new Set();
+      for (let j=0;j<str.length;j++)
+        if (str[j]==='X' && r()<0.22) bloom.add(j);
+      this.plants.push({
+        str, step, turn: turn*(0.92+r()*0.16),
+        x0: W*(0.12 + 0.76*(n===1?0.5:i/(n-1))) + (r()-0.5)*W*0.05,
+        lean: (r()-0.5)*0.1,
+        phase: r()*Math.PI*2,
+        maxDepth: m.maxDepth,
+        tint: r()*0.16 - 0.08,
+        bloom,
+      });
+    }
+    /* backdrop gradient + a pale moon */
+    this.moon = {x: W*(0.15+r()*0.7), y: H*(0.1+r()*0.22), r: 24+r()*30};
+  },
+  sway(t, depth, phase, amp, maxDepth){
+    const d = depth/maxDepth;
+    return amp*d*d*(0.62*Math.sin(1.15*t+phase+depth*0.37) + 0.38*Math.sin(2.31*t+phase*1.7));
+  },
+  frame(t){
+    const pal = gv(this,'palette');
+    const wind = gv(this,'wind');
+    const g = ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0, css(pal,0.02));
+    g.addColorStop(0.72, css(pal,0.1));
+    g.addColorStop(1, css(pal,0.16));
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    /* moon */
+    const mg = ctx.createRadialGradient(this.moon.x,this.moon.y,1,this.moon.x,this.moon.y,this.moon.r*4);
+    mg.addColorStop(0,'rgba(240,238,225,0.9)');
+    mg.addColorStop(0.12,'rgba(240,238,225,0.55)');
+    mg.addColorStop(0.3,'rgba(240,238,225,0.07)');
+    mg.addColorStop(1,'rgba(240,238,225,0)');
+    ctx.fillStyle=mg;
+    ctx.beginPath(); ctx.arc(this.moon.x,this.moon.y,this.moon.r*4,0,Math.PI*2); ctx.fill();
+    /* ground */
+    ctx.fillStyle=css(pal,0.06);
+    ctx.fillRect(0,this.groundY,W,H-this.groundY);
+    ctx.strokeStyle=css(pal,0.42,0.35); ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(0,this.groundY); ctx.lineTo(W,this.groundY); ctx.stroke();
+
+    const NB=8;
+    ctx.lineCap='round';
+    for (const pl of this.plants){
+      const buckets=[]; for (let b=0;b<NB;b++) buckets.push([]);
+      const blossoms=[];
+      let x=pl.x0, y=this.groundY, ang=-Math.PI/2+pl.lean, depth=0;
+      const st=[], str=pl.str, s=pl.step;
+      for (let i=0;i<str.length;i++){
+        const c=str[i];
+        if (c==='F'){
+          ang += this.sway(t, depth, pl.phase, wind, pl.maxDepth)*0.055;
+          const nx=x+Math.cos(ang)*s, ny=y+Math.sin(ang)*s;
+          const b=Math.min(NB-1,(depth/pl.maxDepth*NB)|0);
+          buckets[b].push(x,y,nx,ny);
+          x=nx; y=ny;
+        }
+        else if (c==='+') ang+=pl.turn;
+        else if (c==='-') ang-=pl.turn;
+        else if (c==='['){ st.push(x,y,ang,depth); depth++; }
+        else if (c===']'){ if(st.length){ depth=st.pop(); ang=st.pop(); y=st.pop(); x=st.pop(); } }
+        else if (c==='X' && pl.bloom.has(i)) blossoms.push(x,y);
+      }
+      for (let b=0;b<NB;b++){
+        const arr=buckets[b];
+        if (!arr.length) continue;
+        ctx.strokeStyle=css(pal, clamp(0.3+0.58*(b/(NB-1))+pl.tint,0,1), 0.92);
+        ctx.lineWidth=Math.max(0.55, 3.4*(1-b/NB)*(pl.step/2.4));
+        ctx.beginPath();
+        for (let j=0;j<arr.length;j+=4){ ctx.moveTo(arr[j],arr[j+1]); ctx.lineTo(arr[j+2],arr[j+3]); }
+        ctx.stroke();
+      }
+      ctx.fillStyle=css(pal, 0.97, 0.85);
+      ctx.beginPath();
+      const nB=Math.min(blossoms.length, 2400);
+      for (let j=0;j<nB;j+=2){
+        ctx.moveTo(blossoms[j]+1.5,blossoms[j+1]);
+        ctx.arc(blossoms[j],blossoms[j+1],1.5,0,Math.PI*2);
+      }
+      ctx.fill();
+    }
+  },
+});
+
+/* =====================================================================
+   ROOM III — PETRI · Gray-Scott reaction-diffusion
+   ∂A/∂t = Dₐ∇²A − AB² + f(1−A);  ∂B/∂t = D_b∇²B + AB² − (k+f)B
+   Integrated on a torus with a 9-point Laplacian, drawn via ImageData.
+   ===================================================================== */
+const rdRoom = indexParams({
+  key:'rd', roman:'III', name:'Petri', sub:'reaction–diffusion',
+  desc:'Two invisible chemicals argue across a dish: A feeds, B devours, both diffuse. Turing knew that from such an argument, spots and labyrinths are born. Change the regime and watch one anatomy melt into another.',
+  params:[
+    select('preset','Regime',['Coral','Mitosis','Waves','Solitons'],'Coral',false),
+    range('speed','Simulation rate',2,22,1,12),
+    paletteParam('Ember'),
+  ],
+  PRESETS: { Coral:[0.0545,0.062], Mitosis:[0.0367,0.0649], Waves:[0.014,0.045], Solitons:[0.030,0.060] },
+  init(){
+    const r = this.rand;
+    const gw = Math.round(Math.min(300, W/3.4));
+    const gh = Math.max(40, Math.round(gw*H/W));
+    this.gw=gw; this.gh=gh;
+    const N = gw*gh;
+    this.A = new Float32Array(N).fill(1);
+    this.B = new Float32Array(N);
+    this.A2 = new Float32Array(N);
+    this.B2 = new Float32Array(N);
+    /* neighbour index tables (torus) */
+    this.xm=new Int32Array(gw); this.xp=new Int32Array(gw);
+    for (let x=0;x<gw;x++){ this.xm[x]=(x+gw-1)%gw; this.xp[x]=(x+1)%gw; }
+    this.ym=new Int32Array(gh); this.yp=new Int32Array(gh);
+    for (let y=0;y<gh;y++){ this.ym[y]=((y+gh-1)%gh)*gw; this.yp[y]=((y+1)%gh)*gw; }
+    /* seed a scattering of B blobs */
+    const blobs = 10 + (r()*8|0);
+    for (let bIdx=0;bIdx<blobs;bIdx++){
+      const cx=(r()*gw)|0, cy=(r()*gh)|0, rad=2+(r()*4|0);
+      for (let dy=-rad;dy<=rad;dy++) for (let dx=-rad;dx<=rad;dx++){
+        if (dx*dx+dy*dy>rad*rad) continue;
+        const x=(cx+dx+gw)%gw, y=(cy+dy+gh)%gh;
+        this.B[y*gw+x]=1;
+      }
+    }
+    const p = this.PRESETS[gv(this,'preset')];
+    this.f=p[0]; this.k=p[1];
+    this.lut = palLUT(gv(this,'palette'), 256);
+    this.off = document.createElement('canvas');
+    this.off.width=gw; this.off.height=gh;
+    this.octx = this.off.getContext('2d');
+    this.img = this.octx.createImageData(gw,gh);
+    this.img.data.fill(255);
+  },
+  frame(){
+    const {gw,gh,xm,xp,ym,yp} = this;
+    let A=this.A, B=this.B, A2=this.A2, B2=this.B2;
+    /* glide toward the selected regime — regimes morph, never jump */
+    const tgt = this.PRESETS[gv(this,'preset')];
+    this.f += (tgt[0]-this.f)*0.04;
+    this.k += (tgt[1]-this.k)*0.04;
+    const f=this.f, k=this.k, kf=k+f;
+    const steps = gv(this,'speed')|0;
+    for (let s=0;s<steps;s++){
+      for (let y=0;y<gh;y++){
+        const row=y*gw, up=ym[y], dn=yp[y];
+        for (let x=0;x<gw;x++){
+          const i=row+x, l=xm[x], rr=xp[x];
+          const a=A[i], b=B[i];
+          const lapA = -a + 0.2*(A[row+l]+A[row+rr]+A[up+x]+A[dn+x])
+                          + 0.05*(A[up+l]+A[up+rr]+A[dn+l]+A[dn+rr]);
+          const lapB = -b + 0.2*(B[row+l]+B[row+rr]+B[up+x]+B[dn+x])
+                          + 0.05*(B[up+l]+B[up+rr]+B[dn+l]+B[dn+rr]);
+          const abb = a*b*b;
+          A2[i] = a + (lapA - abb + f*(1-a));
+          B2[i] = b + (0.5*lapB + abb - kf*b);
+        }
+      }
+      let tmp=A; A=A2; A2=tmp; tmp=B; B=B2; B2=tmp;
+    }
+    this.A=A; this.B=B; this.A2=A2; this.B2=B2;
+    /* paint */
+    const d=this.img.data, lut=this.lut, n=gw*gh;
+    for (let i=0;i<n;i++){
+      const v = clamp((1-A[i])*0.92 + B[i]*0.9, 0, 1);
+      const li = (v*255|0)*3;
+      const o=i*4;
+      d[o]=lut[li]; d[o+1]=lut[li+1]; d[o+2]=lut[li+2];
+    }
+    this.octx.putImageData(this.img,0,0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(this.off, 0,0,W,H);
+  },
+  onParam(key){
+    if (key==='palette') this.lut = palLUT(gv(this,'palette'),256);
+  },
+  pointer(x,y){
+    const gx=(x/W*this.gw)|0, gy=(y/H*this.gh)|0, rad=4;
+    for (let dy=-rad;dy<=rad;dy++) for (let dx=-rad;dx<=rad;dx++){
+      if (dx*dx+dy*dy>rad*rad) continue;
+      const px=(gx+dx+this.gw)%this.gw, py=(gy+dy+this.gh)%this.gh;
+      this.B[py*this.gw+px]=1;
+    }
+  }
+});
+
+/* =====================================================================
+   ROOM IV — STRANGE ORBITS · Clifford / de Jong attractors
+   Millions of iterates of a chaotic map deposited into a density
+   field, tone-mapped logarithmically. Parameters breathe slowly, and
+   the field decays each frame, so the attractor is forever mid-morph.
+   ===================================================================== */
+const attractorRoom = indexParams({
+  key:'attractor', roman:'IV', name:'Strange Orbits', sub:'chaotic attractors',
+  desc:'One point, iterated a million times through xₙ₊₁ = sin(a·yₙ) + c·cos(a·xₙ). Where it lingers, light gathers; a logarithm tames the glare. The four constants breathe, and the ghost keeps changing shape.',
+  params:[
+    select('type','Map',['Clifford','de Jong'],'Clifford',true),
+    range('points','Iterates / frame',5000,60000,1000,26000),
+    range('persistence','Persistence',0.9,0.998,0.001,0.975),
+    range('drift','Parameter drift',0,0.4,0.01,0.13),
+    paletteParam('Nocturne'),
+  ],
+  pickParams(){
+    const r=this.rand, type=gv(this,'type');
+    const cells = new Set();
+    for (let tries=0;tries<80;tries++){
+      let a,b,c,d;
+      if (type==='Clifford'){
+        a=(r()*4.4-2.2); b=(r()*4.4-2.2); c=(r()*3.2-1.6); d=(r()*3.2-1.6);
+      } else {
+        a=(r()*5.6-2.8); b=(r()*5.6-2.8); c=(r()*5.6-2.8); d=(r()*5.6-2.8);
+      }
+      cells.clear();
+      let x=0.1, y=0.1;
+      for (let i=0;i<4000;i++){
+        let nx,ny;
+        if (type==='Clifford'){ nx=Math.sin(a*y)+c*Math.cos(a*x); ny=Math.sin(b*x)+d*Math.cos(b*y); }
+        else { nx=Math.sin(a*y)-Math.cos(b*x); ny=Math.sin(c*x)-Math.cos(d*y); }
+        x=nx; y=ny;
+        if (i>200) cells.add(((x*11+40)|0)*97 + ((y*11+40)|0));
+      }
+      if (cells.size >= 260) return [a,b,c,d];
+    }
+    return type==='Clifford' ? [-1.4,1.6,1.0,0.7] : [-2.24,0.43,-0.65,-2.43];
+  },
+  init(){
+    const gw = Math.min(880, Math.round(W*0.72));
+    const gh = Math.max(80, Math.round(gw*H/W));
+    this.gw=gw; this.gh=gh;
+    this.dens = new Float32Array(gw*gh);
+    this.p0 = this.pickParams();
+    this.x=0.1; this.y=0.1; this.max=1e-6;
+    this.lut = palLUT(gv(this,'palette'), 1024);
+    /* tone curve LUT: normalized density -> palette index, log-mapped */
+    this.tone = new Uint16Array(4096);
+    const G = 90, LG = Math.log(1+G);
+    for (let i=0;i<4096;i++)
+      this.tone[i] = Math.min(1023, (Math.log(1+(i/4095)*G)/LG*1023)|0);
+    this.off = document.createElement('canvas');
+    this.off.width=gw; this.off.height=gh;
+    this.octx=this.off.getContext('2d');
+    this.img=this.octx.createImageData(gw,gh);
+    this.img.data.fill(255);
+  },
+  frame(t){
+    const {gw,gh,dens,tone,lut} = this;
+    const type=gv(this,'type');
+    const drift=gv(this,'drift');
+    const a=this.p0[0]+drift*Math.sin(t*0.31+1.0);
+    const b=this.p0[1]+drift*Math.sin(t*0.23+2.1);
+    const c=this.p0[2]+drift*Math.sin(t*0.17+4.2);
+    const d=this.p0[3]+drift*Math.sin(t*0.19+5.6);
+    /* analytic bounds of the maps, plus drift margin */
+    let bx,by;
+    if (type==='Clifford'){ bx=1+Math.abs(this.p0[2])+drift; by=1+Math.abs(this.p0[3])+drift; }
+    else { bx=2.02+drift; by=2.02+drift; }
+    const scale=Math.min(gw/(2*bx), gh/(2*by))*0.94;
+    const cx=gw/2, cy=gh/2;
+    let x=this.x, y=this.y;
+    const n=gv(this,'points')|0;
+    if (type==='Clifford'){
+      for (let i=0;i<n;i++){
+        const nx=Math.sin(a*y)+c*Math.cos(a*x);
+        const ny=Math.sin(b*x)+d*Math.cos(b*y);
+        x=nx; y=ny;
+        const px=(cx+x*scale)|0, py=(cy+y*scale)|0;
+        if (px>=0&&px<gw&&py>=0&&py<gh) dens[py*gw+px]+=1;
+      }
+    } else {
+      for (let i=0;i<n;i++){
+        const nx=Math.sin(a*y)-Math.cos(b*x);
+        const ny=Math.sin(c*x)-Math.cos(d*y);
+        x=nx; y=ny;
+        const px=(cx+x*scale)|0, py=(cy+y*scale)|0;
+        if (px>=0&&px<gw&&py>=0&&py<gh) dens[py*gw+px]+=1;
+      }
+    }
+    this.x=x; this.y=y;
+    /* render + decay in one pass */
+    const decay=gv(this,'persistence');
+    const img=this.img.data, invMax=1/this.max, N=gw*gh;
+    let fmax=1e-6;
+    for (let i=0;i<N;i++){
+      const dv=dens[i];
+      if (dv>fmax) fmax=dv;
+      const v=dv*invMax;
+      const ti=tone[v>=1?4095:(v*4095)|0]*3;
+      const o=i*4;
+      img[o]=lut[ti]; img[o+1]=lut[ti+1]; img[o+2]=lut[ti+2];
+      dens[i]=dv*decay;
+    }
+    this.max=Math.max(fmax, this.max*0.99);
+    this.octx.putImageData(this.img,0,0);
+    ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(this.off,0,0,W,H);
+  },
+});
+
+/* =====================================================================
+   ROOM V — CATHEDRAL · Voronoi stained glass
+   Cells are built by clipping the frame against perpendicular
+   bisectors (a direct half-plane Voronoi). Sites glide toward their
+   cell centroids — Lloyd relaxation — while a slow noise current
+   keeps the leadlight forever settling.
+   ===================================================================== */
+const voronoiRoom = indexParams({
+  key:'voronoi', roman:'V', name:'Cathedral', sub:'voronoi stained glass',
+  desc:'Each pane is everything nearer its own seed than any other — the frame carved by perpendicular bisectors. Lloyd’s relaxation pulls every seed toward its pane’s centroid, so the window is always, gently, annealing.',
+  params:[
+    range('cells','Panes',24,180,2,84,true),
+    range('relax','Lloyd relaxation',0,0.16,0.005,0.05),
+    range('drift','Current',0,2,0.05,0.7),
+    range('glow','Glow',0,1,0.05,0.65),
+    paletteParam('Vitrail'),
+  ],
+  init(){
+    const r=this.rand;
+    this.noise = makeNoise(r);
+    const n=gv(this,'cells');
+    this.sites=[];
+    for (let i=0;i<n;i++){
+      this.sites.push({
+        x: W*(0.04+0.92*r()), y: H*(0.04+0.92*r()),
+        colT: 0.18+0.8*r(),
+        phase: r()*Math.PI*2,
+      });
+    }
+  },
+  clip(poly, ax,ay, bx,by){
+    const mx=(ax+bx)/2, my=(ay+by)/2, dx=bx-ax, dy=by-ay;
+    const out=[];
+    const n=poly.length;
+    for (let i=0;i<n;i++){
+      const p=poly[i], q=poly[(i+1)%n];
+      const dp=(p[0]-mx)*dx+(p[1]-my)*dy;
+      const dq=(q[0]-mx)*dx+(q[1]-my)*dy;
+      if (dp<=0) out.push(p);
+      if ((dp<0&&dq>0)||(dp>0&&dq<0)){
+        const s=dp/(dp-dq);
+        out.push([p[0]+(q[0]-p[0])*s, p[1]+(q[1]-p[1])*s]);
+      }
+    }
+    return out;
+  },
+  frame(t){
+    const pal=gv(this,'palette');
+    const relax=gv(this,'relax'), drift=gv(this,'drift'), glow=gv(this,'glow');
+    ctx.fillStyle=css(pal,0,1); ctx.fillRect(0,0,W,H);
+    const S=this.sites, n=S.length;
+    const polys=new Array(n);
+    const frame0=[[6,6],[W-6,6],[W-6,H-6],[6,H-6]];
+    for (let i=0;i<n;i++){
+      let poly=frame0;
+      const si=S[i];
+      for (let j=0;j<n;j++){
+        if (j===i) continue;
+        poly=this.clip(poly, si.x,si.y, S[j].x,S[j].y);
+        if (poly.length<3) break;
+      }
+      polys[i]=poly;
+    }
+    /* Lloyd step + noise current, then draw */
+    for (let i=0;i<n;i++){
+      const poly=polys[i], si=S[i];
+      if (poly.length>=3){
+        let area=0, cxx=0, cyy=0;
+        for (let j2=0;j2<poly.length;j2++){
+          const p=poly[j2], q=poly[(j2+1)%poly.length];
+          const cr=p[0]*q[1]-q[0]*p[1];
+          area+=cr; cxx+=(p[0]+q[0])*cr; cyy+=(p[1]+q[1])*cr;
+        }
+        if (Math.abs(area)>1e-6){
+          area*=0.5; cxx/=6*area; cyy/=6*area;
+          si.x+=(cxx-si.x)*relax; si.y+=(cyy-si.y)*relax;
+          si.cx=cxx; si.cy=cyy;
+        }
+      }
+      const na=this.noise.fbm(si.x*0.0014, si.y*0.0014, t*0.06+si.phase, 2)*Math.PI*3;
+      si.x=clamp(si.x+Math.cos(na)*drift, 8, W-8);
+      si.y=clamp(si.y+Math.sin(na)*drift, 8, H-8);
+    }
+    /* glass fills */
+    for (let i=0;i<n;i++){
+      const poly=polys[i]; if (!poly || poly.length<3) continue;
+      const si=S[i], cx=si.cx==null?si.x:si.cx, cy=si.cy==null?si.y:si.cy;
+      let rr=10;
+      for (const p of poly){
+        const dd=(p[0]-cx)*(p[0]-cx)+(p[1]-cy)*(p[1]-cy);
+        if (dd>rr*rr) rr=Math.sqrt(dd);
+      }
+      const col=sampPal(pal, si.colT);
+      const gr=ctx.createRadialGradient(cx,cy,rr*0.05,cx,cy,rr);
+      gr.addColorStop(0,'rgba('+(col[0]|0)+','+(col[1]|0)+','+(col[2]|0)+',0.95)');
+      gr.addColorStop(1,'rgba('+(col[0]*0.32|0)+','+(col[1]*0.32|0)+','+(col[2]*0.32|0)+',0.95)');
+      ctx.fillStyle=gr;
+      ctx.beginPath();
+      ctx.moveTo(poly[0][0],poly[0][1]);
+      for (let j3=1;j3<poly.length;j3++) ctx.lineTo(poly[j3][0],poly[j3][1]);
+      ctx.closePath(); ctx.fill();
+    }
+    /* glowing edges (additive), then dark leading */
+    if (glow>0){
+      ctx.globalCompositeOperation='lighter';
+      ctx.lineJoin='round';
+      for (let pass=0;pass<2;pass++){
+        ctx.lineWidth=pass===0?7:2.6;
+        for (let i=0;i<n;i++){
+          const poly=polys[i]; if (!poly || poly.length<3) continue;
+          ctx.strokeStyle=css(pal, S[i].colT, (pass===0?0.055:0.13)*glow);
+          ctx.beginPath();
+          ctx.moveTo(poly[0][0],poly[0][1]);
+          for (let j4=1;j4<poly.length;j4++) ctx.lineTo(poly[j4][0],poly[j4][1]);
+          ctx.closePath(); ctx.stroke();
+        }
+      }
+      ctx.globalCompositeOperation='source-over';
+    }
+    ctx.strokeStyle='rgba(8,7,5,0.95)';
+    ctx.lineWidth=2.4; ctx.lineJoin='round';
+    for (let i=0;i<n;i++){
+      const poly=polys[i]; if (!poly || poly.length<3) continue;
+      ctx.beginPath();
+      ctx.moveTo(poly[0][0],poly[0][1]);
+      for (let j5=1;j5<poly.length;j5++) ctx.lineTo(poly[j5][0],poly[j5][1]);
+      ctx.closePath(); ctx.stroke();
+    }
+  },
+  pointer(x,y){
+    if (this.sites.length<220)
+      this.sites.push({x,y,colT:0.18+0.8*this.rand(),phase:this.rand()*Math.PI*2});
+  }
+});
+
+/* =====================================================================
+   ROOM VI — MYCELIUM · differential growth  (the house invention)
+   A closed loop of nodes that smooths toward its neighbours, repels
+   everything else within reach (spatial hash), rides a whisper of
+   noise, and inserts new nodes wherever an edge stretches. The loop
+   buckles into coral folds; every frame is also stamped faintly into
+   an accumulation buffer, so the history of the growth remains as
+   translucent rings — a fossil record of its own becoming.
+   ===================================================================== */
+const myceliumRoom = indexParams({
+  key:'mycelium', roman:'VI', name:'Mycelium', sub:'differential growth',
+  desc:'A ring of cells that wants two irreconcilable things: to hold its neighbours close and to keep every stranger at arm’s length. Fed new cells, it has no choice but to buckle into coral. Its past selves remain beneath it, printed as pale rings.',
+  params:[
+    range('radius','Personal space',6,26,0.5,12),
+    range('growth','Nutrients',0,6,0.1,1.8),
+    range('wiggle','Whim',0,1,0.02,0.32),
+    range('maxNodes','Cell budget',600,4200,100,2800,true),
+    paletteParam('Abyss'),
+  ],
+  init(){
+    const r=this.rand;
+    this.noise=makeNoise(r);
+    this.nodes=[];
+    const n0=70, R0=Math.min(W,H)*0.055;
+    const cx=W*0.5+ (r()-0.5)*W*0.08, cy=H*0.5 + (r()-0.5)*H*0.08;
+    for (let i=0;i<n0;i++){
+      const a=i/n0*Math.PI*2;
+      this.nodes.push({
+        x:cx+Math.cos(a)*R0*(1+0.12*(r()-0.5)),
+        y:cy+Math.sin(a)*R0*(1+0.12*(r()-0.5)),
+      });
+    }
+    const b=makeBuffer();
+    this.buf=b[0]; this.bctx=b[1];
+    this.bctx.fillStyle=css(gv(this,'palette'),0,1);
+    this.bctx.fillRect(0,0,W,H);
+    this.carry=0;
+  },
+  physics(t){
+    const nodes=this.nodes, n=nodes.length;
+    const R=gv(this,'radius'), R2=R*R;
+    const wig=gv(this,'wiggle');
+    const noi=this.noise;
+    /* spatial hash */
+    const cell=R, inv=1/cell;
+    const grid=new Map();
+    for (let i=0;i<n;i++){
+      const key=(((nodes[i].x*inv)|0)+2048)*4096 + (((nodes[i].y*inv)|0)+2048);
+      let arr=grid.get(key);
+      if (!arr){ arr=[]; grid.set(key,arr); }
+      arr.push(i);
+    }
+    const fx=new Float32Array(n), fy=new Float32Array(n);
+    for (let i=0;i<n;i++){
+      const p=nodes[i];
+      const pr=nodes[(i+n-1)%n], nx2=nodes[(i+1)%n];
+      /* cohesion: relax toward the midpoint of neighbours */
+      fx[i]+=((pr.x+nx2.x)*0.5-p.x)*0.24;
+      fy[i]+=((pr.y+nx2.y)*0.5-p.y)*0.24;
+      /* repulsion from every non-adjacent node within R */
+      const gx=((p.x*inv)|0)+2048, gy=((p.y*inv)|0)+2048;
+      for (let ox=-1;ox<=1;ox++) for (let oy=-1;oy<=1;oy++){
+        const arr=grid.get((gx+ox)*4096+(gy+oy));
+        if (!arr) continue;
+        for (const j of arr){
+          if (j===i) continue;
+          const ringD=Math.abs(i-j);
+          if (ringD<=2 || ringD>=n-2) continue;
+          const q=nodes[j];
+          const dx=p.x-q.x, dy=p.y-q.y;
+          const d2=dx*dx+dy*dy;
+          if (d2>R2 || d2<1e-6) continue;
+          const d=Math.sqrt(d2), f=(1-d/R)*0.85/d;
+          fx[i]+=dx*f; fy[i]+=dy*f;
+        }
+      }
+      /* a whisper of noise */
+      if (wig>0){
+        const a=noi.fbm(p.x*0.008, p.y*0.008, t*0.13, 2)*Math.PI*4;
+        fx[i]+=Math.cos(a)*wig*0.55;
+        fy[i]+=Math.sin(a)*wig*0.55;
+      }
+    }
+    const M=2.2;
+    for (let i=0;i<n;i++){
+      const l=Math.hypot(fx[i],fy[i]);
+      const s=l>M?M/l:1;
+      nodes[i].x=clamp(nodes[i].x+fx[i]*s, 4, W-4);
+      nodes[i].y=clamp(nodes[i].y+fy[i]*s, 4, H-4);
+    }
+  },
+  resample(){
+    const nodes=this.nodes, cap=gv(this,'maxNodes');
+    const maxE=gv(this,'radius')*0.78, minE=1.1;
+    const out=[];
+    const n=nodes.length;
+    for (let i=0;i<n;i++){
+      const cur=nodes[i], nxt=nodes[(i+1)%n];
+      const d=Math.hypot(nxt.x-cur.x, nxt.y-cur.y);
+      if (d<minE && out.length>3) continue;      /* merge cramped cells */
+      out.push(cur);
+      if (d>maxE && n+out.length-i<cap)
+        out.push({x:(cur.x+nxt.x)/2, y:(cur.y+nxt.y)/2});
+    }
+    this.nodes=out;
+    /* nutrients: random midpoint insertions drive the buckling */
+    this.carry+=gv(this,'growth');
+    while (this.carry>=1 && this.nodes.length<cap){
+      this.carry-=1;
+      const i=(this.rand()*this.nodes.length)|0;
+      const a=this.nodes[i], b2=this.nodes[(i+1)%this.nodes.length];
+      this.nodes.splice(i+1,0,{
+        x:(a.x+b2.x)/2+(this.rand()-0.5)*1.5,
+        y:(a.y+b2.y)/2+(this.rand()-0.5)*1.5,
+      });
+    }
+    if (this.carry>=1) this.carry=0;
+  },
+  strokeLoop(c2, alpha, width, pal, composite){
+    const nodes=this.nodes, n=nodes.length, NB=24;
+    if (n<4) return;
+    if (composite) c2.globalCompositeOperation=composite;
+    c2.lineJoin='round'; c2.lineCap='round';
+    for (let b=0;b<NB;b++){
+      const i0=(b*n/NB)|0, i1=(((b+1)*n/NB)|0)+1;
+      c2.strokeStyle=css(pal, 0.3+0.62*(b/(NB-1)), alpha);
+      c2.lineWidth=width;
+      c2.beginPath();
+      c2.moveTo(nodes[i0%n].x, nodes[i0%n].y);
+      for (let i=i0+1;i<=i1;i++) c2.lineTo(nodes[i%n].x, nodes[i%n].y);
+      c2.stroke();
+    }
+    if (composite) c2.globalCompositeOperation='source-over';
+  },
+  frame(t){
+    const pal=gv(this,'palette');
+    this.physics(t);
+    this.physics(t+0.008);
+    this.resample();
+    /* stamp history into the accumulation buffer */
+    this.strokeLoop(this.bctx, 0.045, 1, pal, null);
+    /* present: history beneath, the living edge above */
+    ctx.drawImage(this.buf, 0,0,W,H);
+    this.strokeLoop(ctx, 0.12, 4.5, pal, 'lighter');
+    this.strokeLoop(ctx, 0.9, 1.35, pal, null);
+  },
+});
+
+/* ================= gallery chrome ================= */
+const ROOMS = [flowRoom, gardenRoom, rdRoom, attractorRoom, voronoiRoom, myceliumRoom];
+const roomByKey = {};
+for (const r of ROOMS) roomByKey[r.key]=r;
+
+let seed = (Math.random()*0x7fffffff)|0;
+let current = null;
+let switching = false;
+
+function initRoom(room){
+  room.rand = mulberry32((seed ^ hashStr(room.key)) >>> 0);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=1;
+  room.init();
+  $('#seedLbl').textContent = 'SEED ' + String(seed).padStart(10,'0');
+}
+
+/* --- room nav --- */
+const nav = $('#roomNav');
+ROOMS.forEach((room, idx)=>{
+  const b=document.createElement('button');
+  b.className='roomBtn';
+  b.innerHTML='<span class="num">'+room.roman+'</span><span class="nm">'+room.name+
+              '</span><span class="sub">'+room.sub+'</span>';
+  b.addEventListener('click',()=>switchRoom(room.key));
+  b.dataset.key=room.key;
+  nav.appendChild(b);
+});
+function markActive(){
+  document.querySelectorAll('.roomBtn').forEach(b=>{
+    b.classList.toggle('active', b.dataset.key===current.key);
+  });
+}
+
+/* --- controls --- */
+let reinitTimer=null;
+function scheduleReinit(){
+  clearTimeout(reinitTimer);
+  reinitTimer=setTimeout(()=>initRoom(current), 240);
+}
+function buildControls(room){
+  const box=$('#params');
+  box.innerHTML='';
+  for (const p of room.params){
+    const wrap=document.createElement('div');
+    wrap.className='ctl';
+    const lab=document.createElement('label');
+    const nameSpan=document.createElement('span');
+    nameSpan.textContent=p.label;
+    lab.appendChild(nameSpan);
+    if (p.type==='range'){
+      const out=document.createElement('output');
+      out.textContent=p.value;
+      lab.appendChild(out);
+      const inp=document.createElement('input');
+      inp.type='range'; inp.min=p.min; inp.max=p.max; inp.step=p.step; inp.value=p.value;
+      inp.addEventListener('input',()=>{
+        p.value=parseFloat(inp.value);
+        out.textContent=p.value;
+        if (p.reinit) scheduleReinit();
+        else if (room.onParam) room.onParam(p.key);
+      });
+      wrap.appendChild(lab); wrap.appendChild(inp);
+    } else {
+      const sel=document.createElement('select');
+      for (const o of p.options){
+        const op=document.createElement('option');
+        op.value=o; op.textContent=o;
+        if (o===p.value) op.selected=true;
+        sel.appendChild(op);
+      }
+      sel.addEventListener('change',()=>{
+        p.value=sel.value;
+        if (p.reinit) initRoom(room);
+        else if (room.onParam) room.onParam(p.key);
+      });
+      wrap.appendChild(lab); wrap.appendChild(sel);
+    }
+    box.appendChild(wrap);
+  }
+  $('#desc').textContent=room.desc;
+}
+
+/* --- title card --- */
+let titleTimer=null;
+function showTitle(room){
+  const el=$('#roomTitle');
+  el.querySelector('.rt-roman').textContent='Room '+room.roman;
+  el.querySelector('.rt-name').textContent=room.name;
+  el.querySelector('.rt-sub').textContent=room.sub;
+  el.classList.add('show');
+  clearTimeout(titleTimer);
+  titleTimer=setTimeout(()=>el.classList.remove('show'), 2600);
+}
+
+/* --- transitions --- */
+const veil=$('#veil');
+function switchRoom(key){
+  if (switching || (current && current.key===key)) return;
+  switching=true;
+  veil.classList.remove('off'); veil.classList.add('on');
+  setTimeout(()=>{
+    current=roomByKey[key];
+    initRoom(current);
+    buildControls(current);
+    markActive();
+    showTitle(current);
+    veil.classList.remove('on'); veil.classList.add('off');
+    switching=false;
+  }, 580);
+}
+
+/* --- buttons & keys --- */
+$('#btnReseed').addEventListener('click',()=>{
+  seed=(Math.random()*0x7fffffff)|0;
+  initRoom(current);
+});
+$('#btnSave').addEventListener('click',()=>{
+  const a=document.createElement('a');
+  a.download='atelier-'+current.key+'-'+seed+'.png';
+  a.href=canvas.toDataURL('image/png');
+  a.click();
+});
+$('#panelToggle').addEventListener('click',()=>{
+  document.body.classList.toggle('zen');
+  $('#panelToggle').textContent=document.body.classList.contains('zen')?'▸':'◂';
+});
+window.addEventListener('keydown',(e)=>{
+  const tag=(e.target.tagName||'').toLowerCase();
+  if (tag==='input'||tag==='select'||tag==='textarea') return;
+  const k=e.key.toLowerCase();
+  if (k>='1'&&k<='6') switchRoom(ROOMS[+k-1].key);
+  else if (k==='r') $('#btnReseed').click();
+  else if (k==='s') $('#btnSave').click();
+  else if (k==='h') $('#panelToggle').click();
+});
+
+/* --- pointer interaction --- */
+let pointerDown=false;
+canvas.addEventListener('pointerdown',(e)=>{
+  pointerDown=true;
+  if (current && current.pointer && !switching) current.pointer(e.clientX, e.clientY);
+});
+canvas.addEventListener('pointermove',(e)=>{
+  if (pointerDown && current && current.pointer && !switching)
+    current.pointer(e.clientX, e.clientY);
+});
+window.addEventListener('pointerup',()=>{ pointerDown=false; });
+
+/* --- resize --- */
+let resizeTimer=null;
+window.addEventListener('resize',()=>{
+  clearTimeout(resizeTimer);
+  resizeTimer=setTimeout(()=>{
+    sizeCanvas();
+    if (current) initRoom(current);
+  }, 220);
+});
+
+/* --- the loop --- */
+let tPrev=performance.now(), tSec=0;
+function loop(now){
+  const dt=Math.min(0.05,(now-tPrev)/1000);
+  tPrev=now; tSec+=dt;
+  if (current && !switching){
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    ctx.globalCompositeOperation='source-over';
+    ctx.globalAlpha=1;
+    current.frame(tSec, dt);
+  }
+  requestAnimationFrame(loop);
+}
+
+/* --- entrance --- */
+sizeCanvas();
+current=flowRoom;
+initRoom(current);
+buildControls(current);
+markActive();
+requestAnimationFrame(loop);
+setTimeout(()=>{
+  veil.classList.remove('on'); veil.classList.add('off');
+  showTitle(current);
+}, 350);
+</script>
+</body>
+</html>

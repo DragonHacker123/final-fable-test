@@ -515,10 +515,11 @@ def _render_row(j):
     return j, " ".join(out)
 
 
-def render(width, height, samples, depth, aperture, seed, jobs, out_path):
+def render(width, height, samples, depth, aperture, clamp, seed, jobs,
+           out_path):
     start = time.time()
     rows = [None] * height
-    init_args = (width, height, samples, depth, aperture, seed)
+    init_args = (width, height, samples, depth, aperture, clamp, seed)
 
     if jobs <= 1:
         _init_worker(*init_args)
@@ -574,6 +575,9 @@ def main():
                         help="aspect ratio width/height (default: 16/9)")
     parser.add_argument("--aperture", type=float, default=0.12,
                         help="lens aperture for depth of field (default: 0.12)")
+    parser.add_argument("--clamp", type=float, default=6.0,
+                        help="per-sample radiance clamp for firefly "
+                             "suppression; 0 disables (default: 6.0)")
     parser.add_argument("--seed", type=int, default=1,
                         help="random seed (default: 1)")
     parser.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 1,
@@ -584,7 +588,7 @@ def main():
 
     height = max(2, int(args.width / args.aspect))
     render(args.width, height, args.samples, args.depth,
-           args.aperture, args.seed, args.jobs, args.output)
+           args.aperture, args.clamp, args.seed, args.jobs, args.output)
 
 
 if __name__ == "__main__":

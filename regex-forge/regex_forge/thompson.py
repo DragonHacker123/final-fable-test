@@ -27,12 +27,18 @@ def run(prog, s, start=0, anchored=False):
 
     def addthread(lst, visited, pc, pos, saves, marks):
         """Follow epsilon transitions from pc, appending every reachable
-        consuming/match instruction to lst in priority (DFS pre-)order."""
+        consuming/match instruction to lst in priority (DFS pre-)order.
+
+        Threads are deduplicated by (pc, marks) rather than pc alone:
+        two threads at the same pc but with different empty-loop marks can
+        legitimately diverge on the next CHECKMARK, and collapsing them
+        would lose CPython's capture semantics for patterns like (a*)*b
+        (the final empty iteration must be allowed to capture '')."""
         stack = [(pc, saves, marks)]
         while stack:
             pc, sv, mk = stack.pop()
-            while pc not in visited:
-                visited.add(pc)
+            while (pc, mk) not in visited:
+                visited.add((pc, mk))
                 op, a, b = insts[pc]
                 if op == JMP:
                     pc = a
@@ -72,7 +78,14 @@ def run(prog, s, start=0, anchored=False):
         if pos <= n and matched is None and (not anchored or pos == start):
             addthread(clist, cvis, 0, pos, saves0, marks0)
         if not clist:
-            break
+            # No live threads here -- but an unanchored scan must keep
+            # seeding at later start positions (a bare `$` only comes
+            # alive at pos == n).
+            if matched is not None or anchored or pos >= n:
+                break
+            pos += 1
+            cvis = set()   # visited is per-position; drop stale entries
+            continue
         ch = s[pos] if pos < n else None
         nlist, nvis = [], set()
         for pc, sv, mk in clist:

@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MERIDIAN — worldwide city template (3D)</title>
+<style>
+  :root { color-scheme: dark; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden;
+    background: #0b1016; color: #d7dee8;
+    font-family: "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif; }
+  #scene { position: absolute; inset: 0; display: block; }
+
+  .panel { position: absolute; background: rgba(13,19,27,.88);
+    border: 1px solid #26313f; border-radius: 10px; padding: 12px 14px;
+    backdrop-filter: blur(6px); font-size: 12.5px; line-height: 1.45; }
+
+  #hud { top: 14px; left: 14px; width: 285px; max-height: calc(100% - 28px); overflow-y: auto; }
+  #hud h1 { font-size: 15px; letter-spacing: .12em; color: #eef4fb; margin-bottom: 2px; }
+  #hud .sub { color: #8fa1b5; font-size: 11.5px; margin-bottom: 10px; }
+  #hud .stats { color: #a9b8c9; font-size: 11.5px; border-top: 1px solid #26313f;
+    border-bottom: 1px solid #26313f; padding: 7px 0; margin-bottom: 9px; }
+  #hud .stats b { color: #e3ebf5; font-weight: 600; }
+
+  .lgd { display: flex; align-items: center; gap: 8px; margin: 3px 0; color: #b9c6d6; }
+  .chip { width: 13px; height: 13px; border-radius: 3px; flex: none; box-shadow: 0 0 0 1px rgba(255,255,255,.12) inset; }
+
+  #layers label { display: flex; align-items: center; gap: 7px; margin: 4px 0;
+    cursor: pointer; color: #c6d2e0; user-select: none; }
+  #layers input { accent-color: #5aa9e6; }
+  .sect { font-size: 10.5px; letter-spacing: .14em; color: #70859a;
+    margin: 10px 0 4px; text-transform: uppercase; }
+
+  #info { right: 14px; top: 14px; width: 300px; display: none; }
+  #info h2 { font-size: 13px; color: #ffd479; margin-bottom: 5px; }
+  #info p { color: #b9c6d6; }
+  #info .close { position: absolute; top: 7px; right: 10px; cursor: pointer; color: #708196; }
+
+  #hint { left: 50%; bottom: 12px; transform: translateX(-50%);
+    color: #8fa1b5; font-size: 11.5px; padding: 7px 14px; white-space: nowrap; }
+  a { color: #5aa9e6; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="hud" class="panel">
+  <h1>MERIDIAN</h1>
+  <div class="sub">Self-sufficient worldwide city template — v6<br>
+    1,000,000 residents · 7 hex districts · 54.5 km² core</div>
+  <div class="stats">
+    Gross density <b>18,300 /km²</b> · fabric <b>6–8 fl perimeter blocks</b><br>
+    Emergency p90 <b>2.8 min</b> (33 stations, computed — see
+    <span style="color:#e3ebf5">response_model.py</span>)<br>
+    Hinterland <b>~1,250 km²</b>: food · forest · energy · water
+  </div>
+
+  <div class="sect">Legend</div>
+  <div class="lgd"><span class="chip" style="background:#c9a27b"></span> Residential perimeter blocks</div>
+  <div class="lgd"><span class="chip" style="background:#e0b64f"></span> District centre / civic</div>
+  <div class="lgd"><span class="chip" style="background:#9b8ec4"></span> Transit-cluster towers</div>
+  <div class="lgd"><span class="chip" style="background:#7fc8f5"></span> Hospitals (×4)</div>
+  <div class="lgd"><span class="chip" style="background:#ff5f56"></span> Emergency micro-stations (×33)</div>
+  <div class="lgd"><span class="chip" style="background:#69b578"></span> Parks & green wedges</div>
+  <div class="lgd"><span class="chip" style="background:#4f7d52"></span> Hinterland: farms / forest</div>
+  <div class="lgd"><span class="chip" style="background:#38536e"></span> Solar fields · <span class="chip" style="background:#e8eef4"></span> wind</div>
+  <div class="lgd"><span class="chip" style="background:#d8b34a"></span> Tram loops + radials</div>
+
+  <div class="sect">Layers</div>
+  <div id="layers">
+    <label><input type="checkbox" data-layer="buildings" checked> Buildings</label>
+    <label><input type="checkbox" data-layer="green" checked> Parks & green wedges</label>
+    <label><input type="checkbox" data-layer="transit" checked> Tram network</label>
+    <label><input type="checkbox" data-layer="emergency" checked> Emergency stations</label>
+    <label><input type="checkbox" data-layer="coverage"> Response coverage (1 km)</label>
+    <label><input type="checkbox" data-layer="hinterland" checked> Hinterland (food · energy)</label>
+    <label><input type="checkbox" data-layer="coastal"> Coastal hazard module</label>
+    <label><input type="checkbox" data-layer="labels" checked> District labels</label>
+  </div>
+</div>
+
+<div id="info" class="panel">
+  <span class="close" onclick="document.getElementById('info').style.display='none'">✕</span>
+  <h2 id="info-title"></h2>
+  <p id="info-body"></p>
+</div>
+
+<div id="hint" class="panel">drag&nbsp;=&nbsp;orbit&nbsp;· scroll&nbsp;=&nbsp;zoom&nbsp;· right-drag&nbsp;=&nbsp;pan&nbsp;· click a structure for details</div>
+
+<script src="lib/three.min.js"></script>
+<script src="lib/OrbitControls.js"></script>
+<script>
+'use strict';
+/* ============================================================
+   MERIDIAN 3D — procedural model of the v6 template.
+   Geometry parameters are identical to response_model.py:
+   7 hexagonal districts (apothem 1500 m) in a tangent flower,
+   33 emergency stations on a 1.4 km triangular lattice,
+   4 hospitals at core + petals 0/120/240 degrees.
+   Units: metres. Ground plane is XZ, +Y up.
+   ============================================================ */
+
+// ---------- deterministic RNG (mulberry32) ----------
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rand = mulberry32(0x5EED);
+
+// ---------- city geometry (mirror of response_model.py) ----------
+const APOTHEM = 1500, SPACING = 3000;
+const AXES = [0, Math.PI / 3, 2 * Math.PI / 3].map(a => [Math.cos(a), Math.sin(a)]);
+const DISTRICTS = [{ x: 0, z: 0, name: 'Core' }];
+for (let k = 0; k < 6; k++) {
+  DISTRICTS.push({
+    x: SPACING * Math.cos(k * Math.PI / 3),
+    z: SPACING * Math.sin(k * Math.PI / 3),
+    name: 'District ' + (k + 1)
+  });
+}
+function inHex(px, pz, cx, cz, ap = APOTHEM) {
+  const dx = px - cx, dz = pz - cz;
+  return AXES.every(u => Math.abs(dx * u[0] + dz * u[1]) <= ap);
+}
+function inCity(px, pz) { return DISTRICTS.some(d => inHex(px, pz, d.x, d.z)); }
+
+// ---------- renderer / scene ----------
+const canvas = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b1016);
+scene.fog = new THREE.Fog(0x0b1016, 14000, 42000);
+
+const camera = new THREE.PerspectiveCamera(50, 2, 10, 120000);
+camera.position.set(4200, 5200, 9200);
+const controls = new THREE.OrbitControls(camera, canvas);
+controls.target.set(0, 0, 600);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.49;
+controls.minDistance = 400;
+controls.maxDistance = 45000;
+
+scene.add(new THREE.HemisphereLight(0xbcd4ee, 0x1c2530, 0.95));
+const sun = new THREE.DirectionalLight(0xfff2dd, 0.85);
+sun.position.set(-6000, 9000, 4000);
+scene.add(sun);
+
+// ---------- layer groups ----------
+const layers = {};
+for (const n of ['buildings', 'green', 'transit', 'emergency', 'coverage', 'hinterland', 'coastal', 'labels', 'ground']) {
+  layers[n] = new THREE.Group();
+  scene.add(layers[n]);
+}
+layers.coverage.visible = false;
+layers.coastal.visible = false;
+
+const pickables = [];   // meshes with userData.info for click-inspect
+
+// ---------- helpers ----------
+const BOX = new THREE.BoxGeometry(1, 1, 1);
+function box(w, h, d, x, y, z, color, group, info) {
+  const m = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ color }));
+  m.scale.set(w, h, d); m.position.set(x, y, z);
+  group.add(m);
+  if (info) { m.userData.info = info; pickables.push(m); }
+  return m;
+}
+function disc(r, x, z, color, group, opacity = 1, y = 1) {
+  const g = new THREE.CircleGeometry(r, 48);
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity, depthWrite: opacity >= 1 });
+  const m = new THREE.Mesh(g, mat);
+  m.rotation.x = -Math.PI / 2; m.position.set(x, y, z);
+  group.add(m); return m;
+}
+function hexShape(ap) {
+  const s = new THREE.Shape();
+  const R = ap / Math.cos(Math.PI / 6);
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI / 6 + i * Math.PI / 3;   // vertices; flats face 0/60/120 axes
+    const px = R * Math.cos(a), pz = R * Math.sin(a);
+    i === 0 ? s.moveTo(px, pz) : s.lineTo(px, pz);
+  }
+  s.closePath(); return s;
+}
+function textSprite(text, x, y, z, scale = 1, color = '#eaf2fb') {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+  const g = c.getContext('2d');
+  g.font = '600 58px system-ui, sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = 'rgba(0,0,0,.8)'; g.shadowBlur = 14;
+  g.fillStyle = color; g.fillText(text, 256, 64);
+  const t = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthTest: false }));
+  sp.scale.set(1600 * scale, 400 * scale, 1);
+  sp.position.set(x, y, z);
+  layers.labels.add(sp);
+}
+
+// ---------- ground: hinterland plane + urban hex slabs ----------
+disc(26000, 0, 0, 0x24351f, layers.ground, 1, -2);                 // land
+{
+  const hexGeo = new THREE.ShapeGeometry(hexShape(APOTHEM - 8));
+  for (const d of DISTRICTS) {
+    const m = new THREE.Mesh(hexGeo, new THREE.MeshLambertMaterial({ color: d.name === 'Core' ? 0x333c46 : 0x2c343d }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.set(d.x, 0.5, d.z);
+    m.userData.info = {
+      title: d.name === 'Core' ? 'Core district' : d.name,
+      body: (d.name === 'Core'
+        ? 'Holds the university, main hospital campus and inter-city rail head. '
+        : '~143,000 residents on 7.8 km². Own centre with transit hub, market hall, clinic and civic hall — ')
+        + 'each district is independently viable (islandable power, 72 h water, ≥4 micro-stations) and is the unit of construction phasing.'
+    };
+    pickables.push(m);
+    layers.ground.add(m);
+    textSprite(d.name.toUpperCase(), d.x, 420, d.z, d.name === 'Core' ? 1.05 : 0.9,
+               d.name === 'Core' ? '#ffd479' : '#cfdcea');
+  }
+}
+
+// ---------- buildings: instanced perimeter blocks ----------
+const PITCH = 130, BLK = 104, DEPTH = 26;
+const resSlabs = [];      // {w,h,d,x,z,tint}
+const parkPads = [];
+for (const d of DISTRICTS) {
+  const n = Math.ceil(APOTHEM / PITCH);
+  for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
+    const lx = i * PITCH + PITCH / 2, lz = j * PITCH + PITCH / 2;
+    const wx = d.x + lx, wz = d.z + lz;
+    if (!inHex(wx, wz, d.x, d.z, APOTHEM - 95)) continue;
+    const rc = Math.hypot(lx, lz);
+    if (rc < 260) continue;                                  // centre plaza
+    if (rand() < 0.07) { parkPads.push([wx, wz]); continue } // pocket parks
+    const base = 17 + rand() * 10;                           // 6-8 floors
+    const tint = 0.92 + rand() * 0.16;
+    // four slabs around a courtyard
+    resSlabs.push({ w: BLK, h: base + rand() * 3, d: DEPTH, x: wx, z: wz - (BLK - DEPTH) / 2, tint });
+    resSlabs.push({ w: BLK, h: base + rand() * 3, d: DEPTH, x: wx, z: wz + (BLK - DEPTH) / 2, tint });
+    resSlabs.push({ w: DEPTH, h: base + rand() * 3, d: BLK - 2 * DEPTH, x: wx - (BLK - DEPTH) / 2, z: wz, tint });
+    resSlabs.push({ w: DEPTH, h: base + rand() * 3, d: BLK - 2 * DEPTH, x: wx + (BLK - DEPTH) / 2, z: wz, tint });
+  }
+}
+{
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  geo.translate(0, 0.5, 0);                                   // sit on ground
+  const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const im = new THREE.InstancedMesh(geo, mat, resSlabs.length);
+  const M = new THREE.Matrix4(), C = new THREE.Color();
+  const baseC = new THREE.Color(0xc9a27b);
+  resSlabs.forEach((s, k) => {
+    M.makeScale(s.w, s.h, s.d).setPosition(s.x, 0, s.z);
+    im.setMatrixAt(k, M);
+    C.copy(baseC).multiplyScalar(s.tint);
+    im.setColorAt(k, C);
+  });
+  im.userData.info = {
+    title: 'Perimeter-block fabric',
+    body: '6–8 storey courtyard blocks on a 130 m grid — the Barcelona/Vienna/Paris typology. Street side lively, courtyard side quiet (every dwelling gets a ≤45 dB night façade). This fabric carries ~18,300/km² without towers; iteration 1 replaced towers-in-a-park after its documented failure (Pruitt-Igoe, defensible space).'
+  };
+  pickables.push(im);
+  layers.buildings.add(im);
+}
+for (const [px, pz] of parkPads) disc(46, px, pz, 0x69b578, layers.green, 1, 1.4);
+
+// ---------- district centres: plaza, civic hall, towers ----------
+for (const d of DISTRICTS) {
+  disc(235, d.x, d.z, 0x3d464f, layers.ground, 1, 1.2);       // plaza
+  box(120, 24, 74, d.x, 12, d.z + 60, 0xe0b64f, layers.buildings, {
+    title: (d.name === 'Core' ? 'City hall & assembly' : d.name + ' civic hall'),
+    body: 'Market hall, clinic, library and the district civic hall — base-isolated and hardened as the district\'s emergency shelter and post-disaster coordination point (charter L11/L13).'
+  });
+  const nt = d.name === 'Core' ? 6 : 4 + Math.floor(rand() * 2);
+  for (let t = 0; t < nt; t++) {
+    const a = rand() * Math.PI * 2, r = 150 + rand() * 90;
+    const h = 42 + rand() * 26;                               // 12-20 floors
+    box(30, h, 30, d.x + r * Math.cos(a), h / 2, d.z + r * Math.sin(a), 0x9b8ec4, layers.buildings, {
+      title: 'Transit-cluster tower',
+      body: '12–20 storeys, allowed only within 400 m of a district hub. In cyclonic instances: chamfered corners and tuned mass dampers (Taipei 101 precedent); in seismic instances: rocking-wall CLT (NHERI TallWood shake-table precedent).'
+    });
+  }
+}
+
+// ---------- hospitals (core + petals 0/120/240 — mirrors the model) ----------
+for (const idx of [0, 1, 3, 5]) {
+  const d = DISTRICTS[idx];
+  const hx = d.x + (idx === 0 ? -320 : 300), hz = d.z + (idx === 0 ? 260 : -280);
+  box(110, 30, 64, hx, 15, hz, 0x7fc8f5, layers.buildings, {
+    title: 'Hospital ' + (idx === 0 ? '(main campus)' : '— ' + d.name),
+    body: 'One of 4, placed so p90 ambulance transport is 6.5 min (computed in response_model.py). Base-isolated, islandable 72 h; each pair can absorb the other\'s casualty load (N+1).'
+  });
+  box(52, 5, 12, hx, 32.5, hz, 0xff5f56, layers.buildings);
+  box(12, 5, 52, hx, 32.5, hz, 0xff5f56, layers.buildings);
+}
+
+// ---------- emergency micro-station lattice (same rule as the model) ----------
+const stations = [];
+{
+  const a = 1400, rowH = a * Math.sqrt(3) / 2, reach = SPACING + APOTHEM * 2;
+  let r = 0;
+  for (let z = -reach; z <= reach; z += rowH, r++) {
+    const off = (r % 2) ? a / 2 : 0;
+    for (let x = -reach + off; x <= reach; x += a)
+      if (inCity(x, z)) stations.push([x, z]);
+  }
+}
+for (const [sx, sz] of stations) {
+  box(24, 14, 24, sx, 7, sz, 0xff5f56, layers.emergency, {
+    title: 'Resilience micro-station (1 of ' + stations.length + ')',
+    body: 'Pumper + ambulance + cross-trained fire/EMS/community-police crew for ~30k residents. Lattice spacing 1.4 km ⇒ computed response p90 = 2.8 min; still 3.6 min with 25% of stations destroyed. Base-isolated, solar-islanded; doubles as the neighbourhood civic room (kōban model).'
+  });
+  box(4, 26, 4, sx, 13, sz, 0xffb3ad, layers.emergency);
+  disc(1000, sx, sz, 0xff5f56, layers.coverage, 0.10, 2.2);
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(970, 1000, 48),
+    new THREE.MeshBasicMaterial({ color: 0xff5f56, transparent: true, opacity: 0.5 }));
+  ring.rotation.x = -Math.PI / 2; ring.position.set(sx, 2.4, sz);
+  layers.coverage.add(ring);
+}
+
+// ---------- green wedges between petals ----------
+for (let k = 0; k < 6; k++) {
+  const a = Math.PI / 6 + k * Math.PI / 3;                    // between petal axes
+  for (const rr of [2600, 3600]) {
+    const gx = rr * Math.cos(a), gz = rr * Math.sin(a);
+    const m = disc(430 + (rr === 3600 ? 210 : 0), gx, gz, 0x4c8f58, layers.green, 1, 1.1);
+    m.userData.info = {
+      title: 'Green wedge',
+      body: 'Parks, allotments, sports grounds and stormwater basins between petals — also firebreak, floodway, helicopter medevac ground and post-disaster staging. Mapped liquefaction/fault land is zoned here permanently (charter L12).'
+    };
+    pickables.push(m);
+  }
+  for (let t = 0; t < 26; t++) {
+    const rr = 2200 + rand() * 2100, aa = a + (rand() - .5) * 0.34;
+    const tx = rr * Math.cos(aa), tz = rr * Math.sin(aa);
+    if (inCity(tx, tz)) continue;
+    box(10, 26 + rand() * 14, 10, tx, 13, tz, 0x3a6e42, layers.green);
+  }
+}
+
+// ---------- tram network: 2 loops + 6 radials ----------
+function tramPath(pts, closed) {
+  const mat = new THREE.MeshBasicMaterial({ color: 0xd8b34a });
+  const n = closed ? pts.length : pts.length - 1;
+  for (let i = 0; i < n; i++) {
+    const [x1, z1] = pts[i], [x2, z2] = pts[(i + 1) % pts.length];
+    const len = Math.hypot(x2 - x1, z2 - z1);
+    const m = new THREE.Mesh(BOX, mat);
+    m.scale.set(len, 1.6, 13);
+    m.position.set((x1 + x2) / 2, 2.6, (z1 + z2) / 2);
+    m.rotation.y = -Math.atan2(z2 - z1, x2 - x1);
+    layers.transit.add(m);
+  }
+}
+const petalPts = DISTRICTS.slice(1).map(d => [d.x, d.z]);
+tramPath(petalPts, true);                                     // outer loop
+tramPath(petalPts.map(([x, z]) => [x * 0.42, z * 0.42]), true); // inner core loop
+for (const [px, pz] of petalPts) tramPath([[0, 0], [px, pz]], false); // radials
+for (const d of DISTRICTS) {                                  // hub markers
+  const hub = disc(42, d.x, d.z, 0xd8b34a, layers.transit, 1, 2.8);
+  hub.userData.info = {
+    title: d.name + ' transit hub',
+    body: 'Two nested tram loops + 6 radials, ≤5 min headways: every district centre is ≤2 stops from two others. Design mode share 40/30/25/5 walk/bike/transit/motor; freight moves by night cargo-tram (Zurich precedent).'
+  };
+  pickables.push(hub);
+}
+
+// ---------- hinterland: farms, forest, solar, wind, reservoirs ----------
+{
+  // keep the coastal sector clear so the sea can be toggled on without
+  // farms/turbines standing in the water
+  const COAST_Z = 4900;
+  // farm belt (annulus ~5.5-12.5 km) as field patches
+  const crop = [0x5d7a33, 0x74883a, 0x8a9a45, 0x4f7d52, 0x6b8f3f];
+  for (let i = 0; i < 300; i++) {
+    const a = rand() * Math.PI * 2, r = 5600 + rand() * 6900;
+    const w = 320 + rand() * 520, h = 320 + rand() * 520;
+    if (r * Math.sin(a) > COAST_Z - 400) continue;
+    const m = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ color: crop[Math.floor(rand() * crop.length)] }));
+    m.scale.set(w, 2, h);
+    m.position.set(r * Math.cos(a), 0, r * Math.sin(a));
+    m.rotation.y = rand() * Math.PI;
+    layers.hinterland.add(m);
+  }
+  const farmInfo = disc(650, 8300, 0, 0x74883a, layers.hinterland, 1, 1.5);
+  farmInfo.userData.info = {
+    title: 'Food belt (~1,000 km²)',
+    body: 'Staples, protein and horticulture at ~1,000 m²/person under a plant-forward diet — the arithmetic that killed “vertical farms will feed us” in iteration 3. Nutrient loop closes via biosolids + phosphorus recovery; 18-month grain buffer per district.'
+  };
+  pickables.push(farmInfo);
+
+  // forestry belt (13-17 km)
+  for (let i = 0; i < 170; i++) {
+    const a = rand() * Math.PI * 2, r = 13200 + rand() * 3800;
+    if (r * Math.sin(a) > COAST_Z) continue;
+    disc(260 + rand() * 380, r * Math.cos(a), r * Math.sin(a), 0x2d4f30, layers.hinterland, 1, 0.5 + rand());
+  }
+
+  // solar fields (south-east sector)
+  for (let i = 0; i < 26; i++) {
+    const a = -0.5 + rand() * 0.9, r = 6200 + rand() * 2600;
+    const m = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ color: 0x38536e }));
+    m.scale.set(420 + rand() * 260, 4, 300 + rand() * 200);
+    m.position.set(r * Math.cos(a), 1, r * Math.sin(a));
+    m.userData.info = {
+      title: 'Agrivoltaic solar fields',
+      body: '~25 km² utility PV over grazing/horticulture + ~1 GWp on city rooftops. Firm block (geothermal / SMR / biomass CHP by geography) + 4 GWh batteries + seasonal pit thermal storage (Vantaa, Drake Landing precedents) carry the winter.'
+    };
+    pickables.push(m);
+    layers.hinterland.add(m);
+  }
+
+  // wind cluster (inland sector, away from the coast)
+  for (let i = 0; i < 22; i++) {
+    const a = Math.PI * (1.08 + rand() * 0.42), r = 7800 + rand() * 4200;
+    const wx = r * Math.cos(a), wz = r * Math.sin(a);
+    box(14, 150, 14, wx, 75, wz, 0xe8eef4, layers.hinterland);
+    box(150, 7, 4, wx, 150, wz, 0xe8eef4, layers.hinterland);
+    box(7, 110, 4, wx, 150, wz, 0xe8eef4, layers.hinterland);
+  }
+
+  // reservoirs
+  for (const [rx, rz, rr] of [[-7600, 3400, 620], [5200, -7300, 540], [-4200, -8000, 480]]) {
+    const m = disc(rr, rx, rz, 0x2e5d7a, layers.hinterland, 1, 1.5);
+    m.userData.info = {
+      title: 'Reservoir & catchment',
+      body: 'Rooftop capture + hinterland reservoirs + 40% closed-loop potable reuse (NEWater/Windhoek precedents). Irrigation, not taps, is the real budget — hot inland-arid sites fail this audit and are refused by the template.'
+    };
+    pickables.push(m);
+  }
+}
+
+// ---------- coastal hazard module (toggle) ----------
+{
+  const seaZ = 5450;
+  const sea = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ color: 0x1d4b66 }));
+  sea.scale.set(52000, 2, 14000); sea.position.set(0, -1, seaZ + 7000);
+  sea.userData.info = {
+    title: 'Coastal module — layered defence',
+    body: 'Post-Tōhoku doctrine: living shoreline → +15 m landscape berm → sacrificial non-residential waterfront band → vertical refuge within a 10-min walk. A single wall is exactly what failed in 2011.'
+  };
+  pickables.push(sea);
+  layers.coastal.add(sea);
+
+  const berm = new THREE.Mesh(BOX, new THREE.MeshLambertMaterial({ color: 0x51784a }));
+  berm.scale.set(13000, 15, 170); berm.position.set(0, 7.5, seaZ - 260);
+  berm.userData.info = {
+    title: '+15 m landscape berm',
+    body: 'A dike that reads as a coastal linear park (Sendai reconstruction, Dutch dike-in-dune). Habitable floors in the band behind it start above +15 m; ground floors are sacrificial commercial/workshop uses.'
+  };
+  pickables.push(berm);
+  layers.coastal.add(berm);
+
+  for (let i = -4; i <= 4; i++) {                             // evacuation towers
+    const tx = i * 1350, tz = seaZ - 660;
+    const tw = box(34, 32, 34, tx, 16, tz, 0xd9822b, layers.coastal, {
+      title: 'Vertical evacuation tower',
+      body: 'Hardened ramped refuge every ~1.3 km along the exposure band (Japanese tsunami towers; Ocosta School, WA). Near-field warning can be <15 min — horizontal evacuation of a dense district in that window is fantasy, so refuge is vertical and everywhere.'
+    });
+    tw.material.emissive = new THREE.Color(0x3a1f04);
+    box(40, 3, 40, tx, 33.5, tz, 0xf2b563, layers.coastal);
+  }
+  for (let i = 0; i < 9; i++)                                 // port quay + cranes
+    box(60, 4, 220, -5200 + i * 260, 2, seaZ + 240, 0x55606c, layers.coastal);
+}
+
+// ---------- click-to-inspect ----------
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+let downXY = null;
+canvas.addEventListener('pointerdown', e => { downXY = [e.clientX, e.clientY]; });
+canvas.addEventListener('pointerup', e => {
+  if (!downXY || Math.hypot(e.clientX - downXY[0], e.clientY - downXY[1]) > 5) return;
+  mouse.x = (e.clientX / innerWidth) * 2 - 1;
+  mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+  ray.setFromCamera(mouse, camera);
+  const hits = ray.intersectObjects(pickables, false)
+    .filter(h => { let o = h.object; do { if (!o.visible) return false; o = o.parent; } while (o); return true; });
+  const info = document.getElementById('info');
+  if (hits.length) {
+    const d = hits[0].object.userData.info;
+    document.getElementById('info-title').textContent = d.title;
+    document.getElementById('info-body').textContent = d.body;
+    info.style.display = 'block';
+  } else info.style.display = 'none';
+});
+
+// ---------- layer toggles ----------
+document.querySelectorAll('#layers input').forEach(cb => {
+  cb.addEventListener('change', () => { layers[cb.dataset.layer].visible = cb.checked; });
+});
+
+// URL overrides, e.g. ?layers=coverage,coastal&cam=0,3000,8000
+{
+  const q = new URLSearchParams(location.search);
+  if (q.has('layers')) for (const name of q.get('layers').split(',')) {
+    const cb = document.querySelector(`#layers input[data-layer="${name}"]`);
+    if (cb && layers[name]) { cb.checked = true; layers[name].visible = true; }
+  }
+  if (q.has('cam')) {
+    const [x, y, z] = q.get('cam').split(',').map(Number);
+    if ([x, y, z].every(Number.isFinite)) camera.position.set(x, y, z);
+  }
+}
+
+// ---------- resize + loop ----------
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+(function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>
